@@ -30,5 +30,5 @@ jobs:
           psql postgresql://postgres:postgres@localhost:5432/rag -f migrations/001_init.sql
       - name: Lint & Test
         run: |
-          ruff check .
+          ruff check . --fix
           pytest -q
