@@ -24,8 +24,6 @@ def search_similar(query_vec: list, k: int=8, lang_filter=("en", "es")) -> List[
         ORDER BY c.embedding <=> :qvec
         LIMIT :k
     """)
-    with engine.begin() as conn:
-        rows = conn.execute(sql, {"qvec": query_vec, "k": k, "langs": list(lang_filter)}).mappings().all()
     engine = get_engine()
     if engine is None:
         # Contract-safe: no DB configured → return empty result
