@@ -63,8 +63,10 @@ async def fetch_text(url: str, accept_lang: str = "es") -> str:
     if _r:
         etag = _r.get(etag_key)
         lm = _r.get(lm_key)
-        if etag: headers["If-None-Match"] = etag.decode("utf-8")
-        if lm: headers["If-Modified-Since"] = lm.decode("utf-8")
+        if etag:
+            headers["If-None-Match"] = etag.decode("utf-8")
+        if lm:
+            headers["If-Modified-Since"] = lm.decode("utf-8")
 
     async with _sem:
         if _is_wiki(p.netloc):
