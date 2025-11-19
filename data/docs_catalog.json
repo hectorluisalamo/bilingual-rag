@@ -1,0 +1,24 @@
+[
+  {"id":"doc_es_wiki_arepa","url":"https://es.wikipedia.org/wiki/Arepa","lang":"es","topic":"food","country":"VE","license":"CC BY-SA"},
+  {"id":"doc_es_wiki_pupusa","url":"https://es.wikipedia.org/wiki/Pupusa","lang":"es","topic":"food","country":"SV","license":"CC BY-SA"},
+  {"id":"doc_es_wiki_tamal","url":"https://es.wikipedia.org/wiki/Tamal","lang":"es","topic":"food","country":"MX","license":"CC BY-SA"},
+  {"id":"doc_es_wiki_ceviche","url":"https://es.wikipedia.org/wiki/Ceviche","lang":"es","topic":"food","country":"PE","license":"CC BY-SA"},
+  {"id":"doc_es_wiki_mole","url":"https://es.wikipedia.org/wiki/Mole","lang":"es","topic":"food","country":"MX","license":"CC BY-SA"},
+
+  {"id":"doc_es_wiki_quinceanera","url":"https://es.wikipedia.org/wiki/Fiesta_de_quince_años","lang":"es","topic":"culture","country":"LATAM","license":"CC BY-SA"},
+  {"id":"doc_es_wiki_dia_muertos","url":"https://es.wikipedia.org/wiki/Día_de_Muertos","lang":"es","topic":"culture","country":"MX","license":"CC BY-SA"},
+  {"id":"doc_es_wiki_cinco_mayo","url":"https://es.wikipedia.org/wiki/Cinco_de_Mayo","lang":"es","topic":"culture","country":"MX","license":"CC BY-SA"},
+  {"id":"doc_es_wiki_espanol_en_eeuu","url":"https://es.wikipedia.org/wiki/Idioma_español_en_Estados_Unidos","lang":"es","topic":"culture","country":"US","license":"CC BY-SA"},
+
+  {"id":"doc_who_es_covid","url":"https://www.who.int/es/health-topics/coronavirus","lang":"es","topic":"health","country":"CH","license":"CC BY 3.0 IGO"},
+  {"id":"doc_cdc_es_diabetes","url":"https://www.cdc.gov/diabetes/es/about/acerca-de-la-diabetes.html","lang":"es","topic":"health","country":"US","license":"Public Domain (US)"},
+  {"id":"doc_cdc_es_vacunas","url":"https://www.cdc.gov/vaccines/imz-schedules/adult-easyread-es.html","lang":"es","topic":"health","country":"US","license":"Public Domain (US)"},
+  {"id":"doc_who_es_salud_mental","url":"https://www.who.int/es/news-room/fact-sheets/detail/mental-health-strengthening-our-response","lang":"es","topic":"health","country":"CH","license":"CC BY 3.0 IGO"},
+  {"id":"doc_cdc_es_salud_latinos","url":"https://archive.cdc.gov/#/details?url=https://www.cdc.gov/spanish/mediosdecomunicacion/comunicados/p_vs_saludhispanos_050515.html","lang":"es","topic":"health","country":"US","license":"Public Domain (US)"},
+
+  {"id":"doc_usa_es_itin","url":"https://www.usa.gov/es/solicitar-numero-de-identificacion-personal-del-contribuyente-ITIN","lang":"es","topic":"civics","country":"US","license":"Public Domain (US)"},
+  {"id":"doc_uscis_es_ciudadania","url":"https://www.uscis.gov/es/ciudadania","lang":"es","topic":"civics","country":"US","license":"Public Domain (US)"},
+  {"id":"doc_vote_es_votar","url":"https://vote.gov/es/guide-to-voting","lang":"es","topic":"civics","country":"US","license":"Public Domain (US)"},
+  {"id":"doc_usa_es_fafsa","url":"https://www.usa.gov/es/fafsa-ayuda-federal-estudiantes","lang":"es","topic":"education","country":"US","license":"Public Domain (US)"},
+  {"id":"doc_irs_es_itin","url":"https://www.irs.gov/es/tin/itin/individual-taxpayer-identification-number-itin","lang":"es","topic":"civics","country":"US","license":"Public Domain (US)"}
+]

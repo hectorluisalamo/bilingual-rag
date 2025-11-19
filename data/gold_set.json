@@ -1,0 +1,60 @@
+[
+  {"query":"Qué es una arepa?","relevant_ids":["doc_es_wiki_arepa"]},
+  {"query":"Ingredientes básicos de la arepa tradicional","relevant_ids":["doc_es_wiki_arepa"]},
+  {"query":"Arepa venezolana vs colombiana diferencias","relevant_ids":["doc_es_wiki_arepa"]},
+  {"query":"Qué es una pupusa?","relevant_ids":["doc_es_wiki_pupusa"]},
+  {"query":"De qué está hecho el tamal?","relevant_ids":["doc_es_wiki_tamal"]},
+  {"query":"Origen del ceviche","relevant_ids":["doc_es_wiki_ceviche"]},
+  {"query":"Qué es el mole y de dónde viene?","relevant_ids":["doc_es_wiki_mole"]},
+  {"query":"Qué se celebra en el Día de los Muertos?","relevant_ids":["doc_es_wiki_dia_muertos"]},
+  {"query":"Qué se celebra el cinco de mayo?","relevant_ids":["doc_es_wiki_cinco_mayo"]},
+  {"query":"¿Qué significa una quinceañera?","relevant_ids":["doc_es_wiki_quinceanera"]},
+
+  {"query":"Síntomas comunes de COVID-19","relevant_ids":["doc_who_es_covid"]},
+  {"query":"Quiénes deben recibir vacunas?","relevant_ids":["doc_cdc_es_vacunas","doc_who_es_covid"]},
+  {"query":"Qué es la diabetes tipo 2?","relevant_ids":["doc_cdc_es_diabetes"]},
+  {"query":"Señales de problemas de salud mental","relevant_ids":["doc_who_es_salud_mental"]},
+  {"query":"Recursos de salud para latinos","relevant_ids":["doc_cdc_es_salud_latinos"]},
+
+  {"query":"Cómo sacar un ITIN","relevant_ids":["doc_irs_es_itin","doc_usa_es_itin"]},
+  {"query":"Requisitos de ciudadanía de Estados Unidos","relevant_ids":["doc_uscis_es_ciudadania"]},
+  {"query":"Cómo votar","relevant_ids":["doc_vote_es_votar"]},
+  {"query":"Ayuda financiera para estudiantes","relevant_ids":["doc_usa_es_fafsa"]},
+  {"query":"Cuánta gente habla español en Estados Unidos?","relevant_ids":["doc_es_wiki_espanol_en_eeuu"]},
+
+  {"query":"What is a tamal vs tamale?","relevant_ids":["doc_es_wiki_tamal"]},
+  {"query":"El Cinco de Mayo es la independencia de México?","relevant_ids":["doc_es_wiki_cinco_mayo"]},
+  {"query":"Quinceañera tradiciones","relevant_ids":["doc_es_wiki_quinceanera"]},
+  {"query":"La arepa se hace con harina de maíz precocida?","relevant_ids":["doc_es_wiki_arepa"]},
+  {"query":"Qué países reclaman el origen de la arepa?","relevant_ids":["doc_es_wiki_arepa"]},
+
+  {"query":"COVID guidance en español for masks","relevant_ids":["doc_who_es_covid"]},
+  {"query":"Tipos de vacunas infantiles","relevant_ids":["doc_cdc_es_vacunas"]},
+  {"query":"Diabetes prevención","relevant_ids":["doc_cdc_es_diabetes"]},
+  {"query":"What is ceviche marinade called?","relevant_ids":["doc_es_wiki_ceviche"]},
+  {"query":"Qué es el segundo idioma en Estados Unidos?","relevant_ids":["doc_es_wiki_espanol_en_eeuu"]},
+
+  {"query":"Qué documentos necesito para el ITIN?","relevant_ids":["doc_irs_es_itin"]},
+  {"query":"Proceso general para ciudadanía","relevant_ids":["doc_uscis_es_ciudadania"]},
+  {"query":"Registering to vote","relevant_ids":["doc_vote_es_votar"]},
+  {"query":"Student aid FAFSA info in Spanish","relevant_ids":["doc_usa_es_fafsa"]},
+  {"query":"Señales de depresión","relevant_ids":["doc_who_es_salud_mental"]},
+
+  {"query":"¿Qué es una pupusa revuelta?","relevant_ids":["doc_es_wiki_pupusa"]},
+  {"query":"Ingredientes de un tamal oaxaqueño","relevant_ids":["doc_es_wiki_tamal"]},
+  {"query":"Historia del mole poblano","relevant_ids":["doc_es_wiki_mole"]},
+  {"query":"Qué representa el altar de Día de Muertos?","relevant_ids":["doc_es_wiki_dia_muertos"]},
+  {"query":"Por qué se celebra el Cinco de Mayo en EE. UU.?","relevant_ids":["doc_es_wiki_cinco_mayo"]},
+
+  {"query":"Qué porcentaje de la población de EE. UU. habla español?","relevant_ids":["doc_es_wiki_espanol_en_eeuu"]},
+  {"query":"Qué pruebas se usan para diagnosticar diabetes?","relevant_ids":["doc_cdc_es_diabetes"]},
+  {"query":"Vacunas recomendadas para adultos","relevant_ids":["doc_cdc_es_vacunas"]},
+  {"query":"Mask guidance in Spanish","relevant_ids":["doc_who_es_covid"]},
+  {"query":"Latino health disparities","relevant_ids":["doc_cdc_es_salud_latinos"]},
+
+  {"query":"Cómo renovar el ITIN","relevant_ids":["doc_irs_es_itin"]},
+  {"query":"Pasos para naturalización","relevant_ids":["doc_uscis_es_ciudadania"]},
+  {"query":"Documentos básicos para votar","relevant_ids":["doc_vote_es_votar"]},
+  {"query":"¿Qué es una quinceañera católica?","relevant_ids":["doc_es_wiki_quinceanera"]},
+  {"query":"Arepas vs pupusas diferencias","relevant_ids":["doc_es_wiki_arepa","doc_es_wiki_pupusa"]}
+]

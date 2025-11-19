@@ -1,0 +1,27 @@
+allowed_licenses:
+  - "Public Domain (US)"
+  - "CC BY-SA"
+  - "CC BY 3.0 IGO"
+blocked_licenses:
+  - "All Rights Reserved"
+  - "No derivatives"
+  - "Unknown"
+allowed_domains:
+  - "es.wikipedia.org"
+  - "www.cdc.gov"
+  - "www.usa.gov"
+  - "www.irs.gov"
+  - "www.who.int/es"
+  - "www.uscis.gov/es"
+rules:
+  dedupe_by: ["url","canonical_title","hash_1k_chars"]
+  default_lang_filter: ["es","en"]
+  require_approved: true
+  prefer_newer_version: true
+  max_pdf_pages: 80
+  min_chunk_chars: 300
+  max_chunk_tokens: 600
+  overlap_tokens: 60
+metadata:
+  topic: ["food","culture","health","civics","education"]
+  country_optional: true
