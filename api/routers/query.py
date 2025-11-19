@@ -27,20 +27,29 @@ class QueryIn(BaseModel):
     k: int = 6
     lang_pref: list[str] = ["en", "es"]
     use_reranker: bool = True
+    topic_hint: str | None = None
+    country_hint: str | None = None
 
 class QueryOut(BaseModel):
     route: str
     answer: str
     citations: list[dict]
 
+@router.post("")
 @router.post("/", response_model=QueryOut)
 async def ask(payload: QueryIn):
     rtype, why = route(payload.query, FAQ)
     if rtype == "faq":
         return QueryOut(route="faq", answer=FAQ[payload.query.strip().lower()], citations=[])
     # memory_only path elided in MVP
-    embs = await embed_texts([payload.query])
-    sims = search_similar(embs[0], k=max(payload.k, 8), lang_filter=tuple(payload.lang_pref))
+    qvec = (await embed_texts([payload.query]))[0]
+    sims = search_similar(
+        qvec,
+        k=max(payload.k, 8),
+        lang_filter=tuple(payload.lang_pref),
+        topic=payload.topic_hint,
+        country=payload.country_hint,
+    )
     if payload.use_reranker and sims:
         sims = rerank(payload.query, sims, top_k=payload.k)
     # naïve generator placeholder with per-claim-ish cites
@@ -50,3 +59,7 @@ async def ask(payload: QueryIn):
         for s in sims[:payload.k]
     ]
     return QueryOut(route="rag", answer=answer, citations=cites)
+
+@router.post("/echo")
+async def echo(payload: QueryIn):
+    return {"ok": True, "received": payload.model_dump()}
