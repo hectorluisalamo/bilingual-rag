@@ -6,7 +6,6 @@ import math
 OPENAI_BASE = os.getenv("OPENAI_BASE", "https://api.openai.com/v1")
 API_KEY = os.getenv("OPENAI_API_KEY")
 MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-OFFLINE = os.getenv("OPENAI_OFFLINE_EMBED", "0") == "1"
 EMBED_DIM = 1536 # text-embedding-3-*
 
 headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
@@ -28,7 +27,7 @@ async def embed_texts(texts: List[str]) -> List[list]:
     # If everthing was cached ...
     if len(missing) == 0:
         return out
-    if not API_KEY or OFFLINE:
+    if not API_KEY:
         # Deterministic, bit-stable pseudo-embeddings via SHA256(text||i).
         for t in missing:
             vec = []
