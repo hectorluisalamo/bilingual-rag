@@ -11,16 +11,26 @@ EMBED_DIM = 1536 # text-embedding-3-*
 
 headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 
+# Per-process cache to ensure bit-identical repeat outputs w/in run
+_EMBED_CACHE: dict[tuple[str, str], list[float]] = {}
+
 async def embed_texts(texts: List[str]) -> List[list]:
-    """
-    Returns embeddings.
-    - Online: calls OpenAI when API key is present and OFFLINE flag is not set.
-    - Offline (CI/local without key): returns deterministic pseudo-embeddings, stable across runs.
-    """
+    # Return any already-cached vectors first
+    out: list[list[float]] = []
+    missing: list[str] = []
+    for t in texts:
+        key = (MODEL, t)
+        if key in _EMBED_CACHE:
+            # Copy to avoid external mutation of cache
+            out.append(list(_EMBED_CACHE[key]))
+        else:
+            missing.append(t)
+    # If everthing was cached ...
+    if len(missing) == 0:
+        return out
     if not API_KEY or OFFLINE:
         # Deterministic, bit-stable pseudo-embeddings via SHA256(text||i).
-        out = []
-        for t in texts:
+        for t in missing:
             vec = []
             te = t.encode("utf-8")
             for i in range(EMBED_DIM):
@@ -34,12 +44,15 @@ async def embed_texts(texts: List[str]) -> List[list]:
             # L2 normalize
             norm = math.sqrt(sum(v*v for v in vec)) or 1.0
             vec = [v / norm for v in vec]
-            out.append(vec)
-        return out
+            _EMBED_CACHE[(MODEL, t)] = vec
+        # Merge cached + newly computed in orig order
+        return [list(_EMBED_CACHE[(MODEL, t)]) for t in texts]
     # Online path: deterministic for identical input/model via OpenAI API
-    payload = {"input": texts, "model": MODEL}
+    payload = {"input": missing, "model": MODEL}
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(f"{OPENAI_BASE}/embeddings", headers=headers, json=payload)
         r.raise_for_status()
         data = r.json()
-    return [d["embedding"] for d in data["data"]]
+    for t, d in zip(missing, data["data"]):
+        _EMBED_CACHE[(MODEL, t)] = d["embedding"]
+    return [list(_EMBED_CACHE[(MODEL, t)]) for t in texts]
