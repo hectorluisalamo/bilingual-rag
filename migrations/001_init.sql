@@ -3,8 +3,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS documents (
   id UUID PRIMARY KEY,
   source_uri TEXT NOT NULL,
-  source_type TEXT NOT NULL, -- pdf, url
-  lang TEXT NOT NULL,        -- en, es
+  source_type TEXT NOT NULL, -- pdf,url,faq
+  lang TEXT NOT NULL,        -- en,es,spanglish
   country TEXT,
   topic TEXT,
   version INTEGER DEFAULT 1,
@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS chunks (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Helpful indexes
+CREATE INDEX IF NOT EXISTS idx_documents_lang ON documents(lang);
+CREATE INDEX IF NOT EXISTS idx_documents_topic ON documents(topic);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(doc_id);
-CREATE INDEX IF NOT EXISTS idx_chunks_topic ON chunks(topic);
-CREATE INDEX IF NOT EXISTS idx_chunks_lang ON chunks(lang);
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON chunks USING ivfflat (embedding vector_l2_ops) WITH (lists = 100);

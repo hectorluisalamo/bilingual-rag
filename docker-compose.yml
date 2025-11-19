@@ -1,13 +1,16 @@
-version: "3.9"
 services:
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
       POSTGRES_DB: rag
     ports: ["5432:5432"]
-    healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres"], interval: 5s, timeout: 5s, retries: 10 }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
@@ -21,7 +24,8 @@ services:
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
     env_file: [.env]
     depends_on:
-      db: { condition: service_healthy }
+      db:
+        condition: service_healthy
       redis:
         condition: service_started
     volumes:
