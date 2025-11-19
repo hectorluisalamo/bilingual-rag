@@ -1,14 +1,6 @@
 import uuid
-from sqlalchemy import create_engine, text
-from api.core.config import settings
-from functools import lru_cache
-
-@lru_cache
-def get_engine():
-    url = settings.db_url
-    if not url:
-        return None
-    return create_engine(settings.db_url, pool_pre_ping=True)
+from sqlalchemy import text
+from api.core.db import engine
 
 def upsert_document(conn, source_uri, source_type, lang, country=None, topic=None, version=1, published_at=None):
     doc_id = uuid.uuid4()
