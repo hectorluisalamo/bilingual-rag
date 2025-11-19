@@ -1,7 +1,7 @@
 import os, httpx
 from typing import List
 import hashlib
-import numpy as np
+import math
 
 OPENAI_BASE = os.getenv("OPENAI_BASE", "https://api.openai.com/v1")
 API_KEY = os.getenv("OPENAI_API_KEY")
@@ -18,16 +18,23 @@ async def embed_texts(texts: List[str]) -> List[list]:
     - Offline (CI/local without key): returns deterministic pseudo-embeddings, stable across runs.
     """
     if not API_KEY or OFFLINE:
-        # Deterministic pseudo-embedding via SHA256-seeded RNG, normalized.
+        # Deterministic, bit-stable pseudo-embeddings via SHA256(text||i).
         out = []
         for t in texts:
-            h = hashlib.sha256(t.encode("utf-8")).digest()
-            seed = int.from_bytes(h[:8], "big", signed=False) % (2**32)
-            rng = np.random.default_rng(seed)
-            v = rng.standard_normal(EMBED_DIM).astype(np.float32)
+            vec = []
+            te = t.encode("utf-8")
+            for i in range(EMBED_DIM):
+                # Hash text with 4-byte counter
+                h = hashlib.sha256(te + i.to_bytes(4, "big", signed=False)).digest()
+                # Map first 8 bytes to [0,1)
+                u = int.from_bytes(h[:8], "big", signed=False)
+                x = (u / 2**64) # [0,1)
+                x = x * 2.0 - 1.0 # [-1,1)
+                vec.append(x)
             # L2 normalize
-            v = v / max(np.linalg.norm(v), 1e-8)
-            out.append(v.tolist())
+            norm = math.sqrt(sum(v*v for v in vec)) or 1.0
+            vec = [v / norm for v in vec]
+            out.append(vec)
         return out
     # Online path: deterministic for identical input/model via OpenAI API
     payload = {"input": texts, "model": MODEL}
