@@ -6,7 +6,7 @@ from fastapi import HTTPException
 UA = settings.ua
 
 _rds = redis.from_url(settings.redis_url) if getattr(settings, "redis_url", None) else None
-TIMEOUT = httpx.Timeout(settings.http_timeout_s, read=settings.to_read, connect=settings.to_connect)
+TIMEOUT = httpx.Timeout(settings.http_timeout_s, read=settings.tout_read, connect=settings.tout_connect)
 
 async def fetch_text(url: str, attempts: int = 3) -> httpx.Response:
     headers = {
