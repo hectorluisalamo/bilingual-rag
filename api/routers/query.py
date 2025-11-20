@@ -29,7 +29,7 @@ class QueryIn(BaseModel):
     use_reranker: bool = True
     topic_hint: str | None = None
     country_hint: str | None = None
-    index_name: str = "default"
+    index_name: str = settings.default_index_name
 
 class QueryOut(BaseModel):
     route: str

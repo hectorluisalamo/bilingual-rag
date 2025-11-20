@@ -11,6 +11,7 @@ def _default_db_url():
 class Settings(BaseModel):
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    default_index_name: str = os.getenv("DEFAULT_INDEX_NAME", "c300o45")
     db_url: str = os.getenv("DB_URL", _default_db_url())
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     reranker_model: str = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-base")
