@@ -5,6 +5,9 @@ from typing import List, Tuple
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _HTML_WS = re.compile(r"\s+")
 
+def clean_whitespace(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip())
+
 def split_sentences(text: str) -> List[str]:
     return [s.strip() for s in SENTENCE_SPLIT.split(text) if s.strip()]
 
