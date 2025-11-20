@@ -18,4 +18,9 @@ seed:
 
 .PHONY: test
 test:
-\tPYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
+
+.PHONY: eval
+eval:
+	python3 scripts/eval_retrieval.py --k_list 1,3,5 --lang es,en --use_reranker
+	@echo "Wrote eval to eval_results.jsonl"
