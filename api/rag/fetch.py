@@ -46,13 +46,12 @@ async def _throttle():
         _tokens -= 1.0
         _last_ts = now
 
-async def fetch_text(url: str, accept_lang: str = "es") -> str:
+async def fetch_text(url: str):
     target = _wiki_html_url(url) or url
     p = urlparse(target)
     headers = {
         "User-Agent": UA,
         "Accept": "*/*",
-        "Accept-Language": accept_lang,
         "Accept-Encoding": "gzip",
         "Cache-Control": "max-age=0"
     }
