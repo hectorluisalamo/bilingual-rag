@@ -13,12 +13,13 @@ headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/js
 # Per-process cache to ensure bit-identical repeat outputs w/in run
 _EMBED_CACHE: dict[tuple[str, str], list[float]] = {}
 
-async def embed_texts(texts: List[str]) -> List[list]:
+async def embed_texts(texts: List[str], model: str | None = None) -> List[list]:
+    use_model = model or MODEL
     # Return any already-cached vectors first
     out: list[list[float]] = []
     missing: list[str] = []
     for t in texts:
-        key = (MODEL, t)
+        key = (use_model, t)
         if key in _EMBED_CACHE:
             # Copy to avoid external mutation of cache
             out.append(list(_EMBED_CACHE[key]))
@@ -27,7 +28,17 @@ async def embed_texts(texts: List[str]) -> List[list]:
     # If everthing was cached ...
     if len(missing) == 0:
         return out
-    if not API_KEY:
+    if API_KEY:
+        # Online path: deterministic for identical input/model via OpenAI API
+        payload = {"input": missing, "model": MODEL}
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(f"{OPENAI_BASE}/embeddings", headers=headers, json=payload)
+            r.raise_for_status()
+            data = r.json()
+        for t, d in zip(missing, data["data"]):
+            _EMBED_CACHE[(MODEL, t)] = d["embedding"]
+        return [list(_EMBED_CACHE[(MODEL, t)]) for t in texts]
+    else:
         # Deterministic, bit-stable pseudo-embeddings via SHA256(text||i).
         for t in missing:
             vec = []
@@ -46,12 +57,3 @@ async def embed_texts(texts: List[str]) -> List[list]:
             _EMBED_CACHE[(MODEL, t)] = vec
         # Merge cached + newly computed in orig order
         return [list(_EMBED_CACHE[(MODEL, t)]) for t in texts]
-    # Online path: deterministic for identical input/model via OpenAI API
-    payload = {"input": missing, "model": MODEL}
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(f"{OPENAI_BASE}/embeddings", headers=headers, json=payload)
-        r.raise_for_status()
-        data = r.json()
-    for t, d in zip(missing, data["data"]):
-        _EMBED_CACHE[(MODEL, t)] = d["embedding"]
-    return [list(_EMBED_CACHE[(MODEL, t)]) for t in texts]
