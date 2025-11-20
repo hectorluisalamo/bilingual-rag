@@ -42,32 +42,49 @@ class PurgeIn(BaseModel):
 
 @router.post("/url")
 async def ingest_url(item: IngestURL):
-    r = await fetch_text(item.url)
-    ctype = (r.headers.get("content-type") or "").lower()
+    fetched = await fetch_text(item.url)
+    if isinstance(r, httpx.Response):
+        r = fetched
+        ctype = (r.headers.get("content-type") or "").lower()
+        html_text = r.text
+        content_bytes = r.content
+    else:
+        # Treat as HTML string with unknown content-type
+        r = None
+        ctype = ""
+        html_text = str(fetched)
+        content_bytes = html_text.encode("utf-8", errors="ignore")
+        
+    is_pdf = ("application/pdf" in ctype) or item.url.lower().endswith(".pdf")
     
-    try:
-        if "application/pdf" in ctype or item.url.lower().endswith(".pdf"):
+    if is_pdf:
+        try:
             # PDF path
-            buf = BytesIO(r.content)
-            try:
-                text = pdf_extract(buf) or ""
-            except Exception as e:
-                raise HTTPException(status_code=422, detail=f"pdf_extract_failed:{type(e).__name__}")
-            text = clean_whitespace(text)
+            text = pdf_extract(BytesIO(content_bytes)) or ""
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"pdf_extract_failed:{type(e).__name__}")
+        text = clean_whitespace(text)
+    else:
+        # HTML path (trafilatura first, BS4 fallback)
+        txt = extract_html(html_text) or ""
+        txt = clean_whitespace(txt)
+        if len(txt) >= 400:
+            text = txt
         else:
-            # HTML path
-            html = r.text if isinstance(r, httpx.Response) else str(r)
-            text = extract_html(html)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"extract_failed:{type(e).__name__}")
-    
+            soup = BeautifulSoup(html_text, "html.parser")
+            for tnode in soup(["script","style","noscript","header","footer","nav","aside"]):
+                tnode.decompose()
+            text = clean_whitespace(soup.get_text(" "))
+            
     if not text or len(text) < 200:
         if not item.allow_fallback_chunk:
             raise HTTPException(status_code=422, detail="no_text_extracted")
-        soup = BeautifulSoup(r.text, "html.parser")
-        for t in soup(["script","style","noscript"]):
-            t.decompose()
-        text = clean_whitespace(soup.get_text(" "))[:1200]
+        # Take first 1200 chars of visible HTML
+        if not is_pdf:
+            soup = BeautifulSoup(html_text, "html.parser")
+            for tnode in soup(["script","style","noscript"]): tnode.decompose()
+            text = clean_whitespace(soup.get_text(" "))
+        text = text[:1200]
     
     # Sentence split + chunk    
     sentences = split_unicode(text) or [text[:1200]]
@@ -77,7 +94,6 @@ async def ingest_url(item: IngestURL):
         overlap=item.overlap
     )
     # Ensure positive token counts (chunker returns (text, tokens))
-    chunks = [(c, max(t, len(c.split()))) for (c, t) in chunks]
     if not chunks:
         if not item.allow_fallback_chunk:
             raise HTTPException(status_code=422, detail="no_chunks_made")
@@ -111,3 +127,10 @@ def purge(p: PurgeIn):
             return {"deleted": 0}
         conn.execute(sqltext("DELETE FROM documents WHERE id=:i"), {"i": row[0]})
         return {"deleted": 1}
+    
+@router.get("/_fetch_debug")
+async def fetch_debug(url: str):
+    got = await fetch_text(url)
+    if isinstance(got, httpx.Response):
+        return {"kind": "response", "status": got.status_code, "ctype": got.headers.get("content-type")}
+    return {"kind": "str", "length": len(str(got))}
