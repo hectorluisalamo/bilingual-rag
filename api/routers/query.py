@@ -29,13 +29,14 @@ class QueryIn(BaseModel):
     use_reranker: bool = True
     topic_hint: str | None = None
     country_hint: str | None = None
+    index_name: str = "default"
 
 class QueryOut(BaseModel):
     route: str
     answer: str
     citations: list[dict]
 
-@router.post("")
+@router.post("", response_model=QueryOut)
 @router.post("/", response_model=QueryOut)
 async def ask(payload: QueryIn):
     rtype, why = route(payload.query, FAQ)
@@ -49,6 +50,7 @@ async def ask(payload: QueryIn):
         lang_filter=tuple(payload.lang_pref),
         topic=payload.topic_hint,
         country=payload.country_hint,
+        index_name=payload.index_name
     )
     if payload.use_reranker and sims:
         sims = rerank(payload.query, sims, top_k=payload.k)

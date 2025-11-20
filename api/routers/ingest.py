@@ -86,7 +86,8 @@ async def ingest_pdf(item: IngestPDF):
         "chunks": len(chunks),
         "index_name": item.index_name,
         "max_tokens": item.max_tokens,
-        "overlap": item.overlap
+        "overlap": item.overlap,
+        "embedding_model": item.embedding_model or "default"
     }
 
 @router.post("/purge")

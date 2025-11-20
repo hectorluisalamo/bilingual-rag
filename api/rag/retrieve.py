@@ -15,7 +15,7 @@ def _to_pgvector_literal(vec) -> str:
 
 def _build_sql(use_literal: bool, with_topic: bool, with_country: bool):
     cast = "CAST(:qvec AS vector)" if use_literal else ":qvec"
-    filters = ["d.approved = TRUE", "d.lang IN :langs"]
+    filters = ["d.approved = TRUE", "d.lang IN :langs", "c.index_name = :index_name"]
     if with_topic:
         filters.append("d.topic = :topic")
     if with_country:
@@ -31,14 +31,18 @@ def _build_sql(use_literal: bool, with_topic: bool, with_country: bool):
         LIMIT :k
     """).bindparams(bindparam("langs", expanding=True))
  
-def search_similar(query_vec: list, k: int = 8, lang_filter=("en","es"), topic: str | None = None, country: str | None = None) -> List[Dict]:
+def search_similar(query_vec: list, k: int = 8, lang_filter=("en","es"), 
+                   topic: str | None = None, country: str | None = None, 
+                   index_name: str = "default") -> List[Dict]:
     langs = list(lang_filter)
     with engine.begin() as conn:
+        params = {"qvec": query_vec, "langs": langs, "k": k, "topic": topic,
+                  "country": country, "index_name": index_name}
         if VECTOR_ADAPTER:
             sql = _build_sql(use_literal=False, with_topic=bool(topic), with_country=bool(country))
-            rows = conn.execute(sql, {"qvec": query_vec, "langs": langs, "k": k, "topic": topic, "country": country}).mappings().all()
+            rows = conn.execute(sql, params).mappings().all()
         else:
             sql = _build_sql(use_literal=True, with_topic=bool(topic), with_country=bool(country))
             qvec_lit = _to_pgvector_literal(query_vec)
-            rows = conn.execute(sql, {"qvec": qvec_lit, "langs": langs, "k": k, "topic": topic, "country": country}).mappings().all()
+            rows = conn.execute(sql, params).mappings().all()
     return [dict(r) for r in rows]
