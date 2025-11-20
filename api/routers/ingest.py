@@ -82,7 +82,8 @@ async def ingest_url(item: IngestURL):
         # Take first 1200 chars of visible HTML
         if not is_pdf:
             soup = BeautifulSoup(html_text, "html.parser")
-            for tnode in soup(["script","style","noscript"]): tnode.decompose()
+            for tnode in soup(["script","style","noscript"]):
+                tnode.decompose()
             text = clean_whitespace(soup.get_text(" "))
         text = text[:1200]
     

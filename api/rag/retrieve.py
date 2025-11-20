@@ -43,6 +43,5 @@ def search_similar(query_vec: list, k: int = 8, lang_filter=("en","es"),
             rows = conn.execute(sql, params).mappings().all()
         else:
             sql = _build_sql(use_literal=True, with_topic=bool(topic), with_country=bool(country))
-            qvec_lit = _to_pgvector_literal(query_vec)
             rows = conn.execute(sql, params).mappings().all()
     return [dict(r) for r in rows]

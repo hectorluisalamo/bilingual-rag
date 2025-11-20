@@ -34,7 +34,8 @@ def extract_html(html: str) -> str:
         return _HTML_WS.sub(" ", extracted).strip()
     # 2) Fallback to BeautifulSoup full-text
     soup = BeautifulSoup(html, "html.parser")
-    for t in soup(["script", "style", "noscript", "header", "footer", "nav", "aside"]): t.decompose()
+    for t in soup(["script", "style", "noscript", "header", "footer", "nav", "aside"]):
+        t.decompose()
     txt = soup.get_text(" ", strip=True)
     return _HTML_WS.sub(" ", txt).strip()
 
