@@ -1,95 +1,52 @@
-import asyncio, time, httpx, re
-from urllib.parse import urlparse, quote
-from urllib import robotparser
+import asyncio, time, httpx
 import redis
 from api.core.config import settings
+from fastapi import HTTPException
 
-WIKI_HOSTS = ("wikipedia.org",)
 UA = settings.ua
 
-# Global sema & token bucket for wiki hosts
-_sem = asyncio.Semaphore(settings.wiki_concurrency)
-_tokens = settings.wiki_rps
-_last_ts = time.monotonic()
-_lock = asyncio.Lock()
+_rds = redis.from_url(settings.redis_url) if getattr(settings, "redis_url", None) else None
+TIMEOUT = httpx.Timeout(settings.http_timeout_s, read=25.0, connect=5.0)
 
-_r = redis.from_url(settings.redis_url) if getattr(settings, "redis_url", None) else None
-TIMEOUT = httpx.Timeout(settings.http_timeout_s, read=settings.http_timeout_s, connect=5.0)
-
-def _is_wiki(host: str) -> bool:
-    host = host.lower()
-    return any(host.endswith(h) for h in WIKI_HOSTS)
-
-def _wiki_html_url(url: str) -> str | None:
-    p = urlparse(url)
-    if not _is_wiki(p.netloc):
-        return None
-    m = re.search(r"/wiki/(.+)$", p.path)
-    if not m:
-        return None
-    title = m.group(1)
-    return f"https://{p.netloc}/api/rest_v1/page/html/{quote(title)}"
-
-async def _throttle():
-    global _tokens, _last_ts
-    async with _lock:
-        now = time.monotonic()
-        # refill tokens
-        refill = (now - _last_ts) * settings.wiki_rps
-        _tokens = min(settings.wiki_rps, _tokens + refill)
-        if _tokens < 1.0:
-            wait_s = (1.0 - _tokens) / settings.wiki_rps
-            await asyncio.sleep(wait_s)
-            now = time.monotonic()
-            refill = (now - _last_ts) * settings.wiki_rps
-            _tokens = min(settings.wiki_rps, _tokens + refill)
-        _tokens -= 1.0
-        _last_ts = now
-
-async def fetch_text(url: str):
-    target = _wiki_html_url(url) or url
-    p = urlparse(target)
+async def fetch_text(url: str, attempts: int = 3) -> httpx.Response:
     headers = {
         "User-Agent": UA,
         "Accept": "*/*",
         "Accept-Encoding": "gzip",
         "Cache-Control": "max-age=0"
     }
+    last = None
 
     # conditional GET (ETag / Last-Modified) via Redis
-    etag_key = f"etag:{target}"
-    lm_key = f"lastmod:{target}"
-    if _r:
-        etag = _r.get(etag_key)
-        lm = _r.get(lm_key)
+    etag_key = f"etag:{url}"
+    lm_key = f"lastmod:{url}"
+    if _rds:
+        etag = _rds.get(etag_key)
+        lm = _rds.get(lm_key)
         if etag:
             headers["If-None-Match"] = etag.decode("utf-8")
         if lm:
             headers["If-Modified-Since"] = lm.decode("utf-8")
 
-    async with _sem:
-        if _is_wiki(p.netloc):
-            await _throttle()
-        async with httpx.AsyncClient(timeout=TIMEOUT, headers=headers, follow_redirects=True) as client:
-            attempts = 0
-            while True:
-                attempts += 1
-                r = await client.get(target)
-                if r.status_code == 304:  # not modified, pull from cache if store bodies later
+    for i in range(1, attempts + 1):
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=headers, follow_redirects=True) as client:
+                r = await client.get(url)
+            if r.status_code == 304:  # not modified, pull from cache if store bodies later
                     # Just return empty string; caller can decide to skip re-ingest
                     return ""
-                if r.status_code == 429:
-                    ra = r.headers.get("Retry-After")
-                    try:
-                        delay = float(ra) if ra else min(2 ** attempts, 30)
-                    except ValueError:
-                        delay = min(2 ** attempts, 30)
-                    await asyncio.sleep(delay)
-                    continue
-                r.raise_for_status()
-                if _r:
-                    if et := r.headers.get("ETag"):
-                        _r.setex(etag_key, settings.cache_ttl_s, et)
-                    if lm := r.headers.get("Last-Modified"):
-                        _r.setex(lm_key, settings.cache_ttl_s, lm)
-                return r
+            if r.status_code >= 500:
+                last = f"upstream_{r.status_code}"
+                time.sleep(min(2**i, 5))
+                continue
+            if _rds:
+                if et := r.headers.get("ETag"):
+                    _rds.setex(etag_key, settings.cache_ttl_s, et)
+                if lm := r.headers.get("Last-Modified"):
+                    _rds.setex(lm_key, settings.cache_ttl_s, lm)
+            r.raise_for_status()
+            return r
+        except Exception as e:
+            last = type(e).__name__
+            time.sleep(min(2**i, 5))
+    raise HTTPException(status_code=502, detail=f"fetch_failed:{last}")
