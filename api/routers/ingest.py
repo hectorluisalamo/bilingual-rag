@@ -18,6 +18,10 @@ class IngestURL(BaseModel):
     topic: str | None = None
     country: str | None = None
     section: str | None = None
+    index_name: str = "default"
+    max_tokens: int = 600
+    overlap: int = 60
+    embedding_model: str | None = None
 
 class IngestPDF(BaseModel):
     path: str
@@ -25,6 +29,10 @@ class IngestPDF(BaseModel):
     topic: str | None = None
     country: str | None = None
     section: str | None = None
+    index_name: str = "default"
+    max_tokens: int = 600
+    overlap: int = 60
+    embedding_model: str | None = None
     
 class PurgeIn(BaseModel):
     url: str
@@ -36,25 +44,50 @@ async def ingest_url(item: IngestURL):
     html_text = BeautifulSoup(raw, "html.parser").get_text(" ")
     text = clean_text(html_text)
     sentences = [s for s in split_sentences(text) if not drop_noise(s)]
-    chunks = chunk_by_tokens(sentences)
-    embeds = await embed_texts([c for c,_ in chunks])
+    chunks = chunk_by_tokens(
+        sentences,
+        max_tokens=item.max_tokens,
+        overlap=item.overlap
+    )
+    embeds = await embed_texts([c for c,_ in chunks], model=item.embedding_model)
     with engine.begin() as conn:
-        doc_id = upsert_document(conn, item.url, "url", normalize_lang_tag(item.lang), item.country, item.topic)
-        payload = [(c, t, e, item.section) for (c,t), e in zip(chunks, embeds)]
-        insert_chunks(conn, doc_id, payload)
-    return {"doc_id": str(doc_id), "chunks": len(chunks)}
+        doc_id = upsert_document(
+            conn, item.url, "url", item.lang,
+            item.country, item.topic,
+            index_name=item.index_name
+        )
+        payload = [(c, t, e, item.section) for (c, t), e in zip(chunks, embeds)]
+        insert_chunks(conn, doc_id, payload, index_name=item.index_name)
+    return {
+        "doc_id": str(doc_id), 
+        "chunks": len(chunks),
+        "index_name": item.index_name,
+        "max_tokens": item.max_tokens,
+        "overlap": item.overlap,
+        "embedding_model": item.embedding_model or "default"
+    }
 
 @router.post("/pdf")
 async def ingest_pdf(item: IngestPDF):
     text = extract_text(item.path)
     sentences = split_sentences(text)
-    chunks = chunk_by_tokens(sentences)
-    embeds = await embed_texts([chunk for chunk, _ in chunks])
+    chunks = chunk_by_tokens(
+        sentences,
+        max_tokens=item.max_tokens,
+        overlap=item.overlap
+    )
+    embeds = await embed_texts([c for c,_ in chunks], model=item.embedding_model)
     with engine.begin() as conn:
-        doc_id = upsert_document(conn, item.path, "pdf", item.lang, item.country, item.topic)
-        payload = [(chunk, tok_count, e_vector, item.section) for (chunk, tok_count), e_vector in zip(chunks, embeds)]
-        insert_chunks(conn, doc_id, payload)
-    return {"doc_id": str(doc_id), "chunks": len(chunks)}
+        doc_id = upsert_document(conn, item.path, "pdf", item.lang, item.country, item.topic, index_name=item.index_name)
+        payload = [(c, t, e, item.section) for (c, t), e in zip(chunks, embeds)]
+        insert_chunks(conn, doc_id, payload, index_name=item.index_name)
+    return {
+        "doc_id": str(doc_id),
+        "chunks": len(chunks),
+        "index_name": item.index_name,
+        "max_tokens": item.max_tokens,
+        "overlap": item.overlap
+    }
 
 @router.post("/purge")
 def purge(p: PurgeIn):
