@@ -1,4 +1,4 @@
-import asyncio, time, httpx
+import time, httpx
 import redis
 from api.core.config import settings
 from fastapi import HTTPException
