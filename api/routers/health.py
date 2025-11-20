@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from sqlalchemy import text
 from api.core.db import engine
 from api.core.config import settings
-import redis
+import os, httpx, redis
 
 router = APIRouter()
 
@@ -40,3 +40,19 @@ def routes():
     return {
         "paths": ["/health/live", "/health/ready", "/health/dbdiag", "/health/routes"]
     }
+
+@router.get("/embeddings")
+async def embeddings_probe():
+    base = os.getenv("OPENAI_BASE", "https://api.openai.com/v1")
+    key  = os.getenv("OPENAI_API_KEY", "")
+    model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    if not key:
+        return {"ok": False, "reason": "no_api_key"}
+    payload = {"input": "hola", "model": model}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(f"{base}/embeddings", headers={"Authorization": f"Bearer {key}"}, json=payload)
+        return {"ok": r.status_code == 200, "status": r.status_code, "model": model, "base": base,
+                "body": r.json() if r.headers.get("content-type","").startswith("application/json") else r.text[:200]}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__}
