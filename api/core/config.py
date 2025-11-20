@@ -20,6 +20,8 @@ class Settings(BaseModel):
     wiki_rps: float = float(os.getenv("WIKI_RPS", "4"))          # requests per second across wiki hosts
     wiki_concurrency: int = int(os.getenv("WIKI_CONC", "3"))     # concurrent requests across wiki hosts
     http_timeout_s: float = float(os.getenv("HTTP_TIMEOUT_S", "15.0"))
+    tout_read: float = float(os.getenv("TIMEOUT_READ", "25.0"))
+    tout_connect: float = float(os.getenv("TIMEOUT_CONNECT", "5.0"))
     obey_robots: bool = os.getenv("OBEY_ROBOTS", "true").lower() == "true"
     cache_ttl_s: int = int(os.getenv("FETCH_CACHE_TTL_S", "86400"))  # 24h
 
