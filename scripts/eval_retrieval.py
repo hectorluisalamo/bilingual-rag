@@ -79,7 +79,7 @@ def main():
         p50 = statistics.median(r["latencies"]) if r["latencies"] else 0.0
         p95 = statistics.quantiles(r["latencies"], n=20)[18] if len(r["latencies"]) >= 20 else max(r["latencies"] or [0.0])
         recall = r["hits"] / max(r["total"], 1)
-        summary[k] = {"retrieval@k": round(recall, 3), "p50_ms": int(p50), "p95_ms": int(p95), "count": r["total"]}
+        summary[k] = {"recall@k": round(recall, 3), "p50_ms": int(p50), "p95_ms": int(p95), "count": r["total"]}
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":
