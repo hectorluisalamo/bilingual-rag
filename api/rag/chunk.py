@@ -1,7 +1,9 @@
-import re
+import re, trafilatura
+from bs4 import BeautifulSoup
 from typing import List, Tuple
 
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_HTML_WS = re.compile(r"\s+")
 
 def split_sentences(text: str) -> List[str]:
     return [s.strip() for s in SENTENCE_SPLIT.split(text) if s.strip()]
@@ -21,3 +23,19 @@ def chunk_by_tokens(sentences: List[str], max_tokens: int = 600, overlap: int = 
     if buf:
         chunks.append((" ".join(buf), buf_tokens))
     return chunks
+
+def extract_text(html: str) -> str:
+    # 1) Try trafilatura (article/main content)
+    extracted = trafilatura.extract(html, include_comments=False, include_formatting=False, favor_precision=True) or ""
+    if len(extracted.strip()) >= 400:
+        return _HTML_WS.sub(" ", extracted).strip()
+    # 2) Fallback to BeautifulSoup full-text
+    soup = BeautifulSoup(html, "html.parser")
+    for t in soup(["script", "style", "noscript", "header", "footer", "nav", "aside"]): t.decompose()
+    txt = soup.get_text(" ", strip=True)
+    return _HTML_WS.sub(" ", txt).strip()
+
+def split_sentences_unicode(text: str):
+    # Unicode-friendly sentence splitter
+    parts = re.split(r"(?<=[\.\!\?])\s+", text)
+    return [p.strip() for p in parts if len(p.strip()) >= 80]
