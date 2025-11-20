@@ -51,7 +51,7 @@ async def fetch_text(url: str, accept_lang: str = "es") -> str:
     p = urlparse(target)
     headers = {
         "User-Agent": UA,
-        "Accept": "text/html;q=0.9,application/xhtml+xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
+        "Accept": "*/*",
         "Accept-Language": accept_lang,
         "Accept-Encoding": "gzip",
         "Cache-Control": "max-age=0"
@@ -93,4 +93,4 @@ async def fetch_text(url: str, accept_lang: str = "es") -> str:
                         _r.setex(etag_key, settings.cache_ttl_s, et)
                     if lm := r.headers.get("Last-Modified"):
                         _r.setex(lm_key, settings.cache_ttl_s, lm)
-                return r.text
+                return r
