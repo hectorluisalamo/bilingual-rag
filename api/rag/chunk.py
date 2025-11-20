@@ -38,7 +38,7 @@ def extract_text(html: str) -> str:
     txt = soup.get_text(" ", strip=True)
     return _HTML_WS.sub(" ", txt).strip()
 
-def split_sentences_unicode(text: str):
+def split_unicode(text: str):
     # Unicode-friendly sentence splitter
     parts = re.split(r"(?<=[\.\!\?])\s+", text)
     return [p.strip() for p in parts if len(p.strip()) >= 80]
