@@ -16,7 +16,7 @@ class Settings(BaseModel):
     reranker_model: str = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-base")
     router_faq_path: str = os.getenv("ROUTER_FAQ_PATH", "./data/samples/faq.jsonl")
     cag_max_tokens: int = int(os.getenv("CAG_MAX_TOKENS", "200000"))
-    ua: str = os.getenv("BOT_UA", "LatinoRAGBot/0.1 (+contact: halamo24@gmail.com)")
+    ua: str = os.getenv("BOT_UA", "LatinoRAGBot/0.1 (+contact: halamo24@gmail.com) Python-httpx")
     wiki_rps: float = float(os.getenv("WIKI_RPS", "4"))          # requests per second across wiki hosts
     wiki_concurrency: int = int(os.getenv("WIKI_CONC", "3"))     # concurrent requests across wiki hosts
     http_timeout_s: float = float(os.getenv("HTTP_TIMEOUT_S", "15"))
