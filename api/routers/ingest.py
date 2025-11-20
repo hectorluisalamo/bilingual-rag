@@ -1,13 +1,14 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from api.core.db import engine
-from api.rag.chunk import split_sentences, chunk_by_tokens, extract_text, split_sentences_unicode
+from api.rag.chunk import split_sentences, chunk_by_tokens, extract_html, split_unicode, clean_whitespace
 from api.rag.cleaning import clean_text
 from api.rag.embed import embed_texts
 from api.rag.fetch import fetch_text
 from api.rag.store import upsert_document, insert_chunks
 from bs4 import BeautifulSoup
-from pdfminer.high_level import extract_text
+from io import BytesIO
+from pdfminer.high_level import extract_text as pdf_extract
 from sqlalchemy import text as sqltext
 
 router = APIRouter()
@@ -41,20 +42,33 @@ class PurgeIn(BaseModel):
 
 @router.post("/url")
 async def ingest_url(item: IngestURL):
-    raw = await fetch_text(item.url, accept_lang=item.lang)
-    text = extract_text(raw)
+    r = await fetch_text(item.url)
+    ctype = (r.headers.get("content-type") or "").lower()
+    
+    if "application/pdf" in ctype or item.url.lower().endswith(".pdf"):
+        # PDF path
+        buf = BytesIO(r.content)
+        try:
+            text = pdf_extract(buf) or ""
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"pdf_extract_failed:{type(e).__name__}")
+        text = clean_whitespace(text)
+    else:
+        # HTML path
+        text = extract_html(r.text)
+    
     if not text or len(text) < 200:
-        if item.allow_fallback_chunk:
-            # Store first 1200 chars as single chunk
-            text = (text or BeautifulSoup(raw, "html.parser").get_text(" "))
-            text = clean_text(text)
-        else:
+        if not item.allow_fallback_chunk:
             raise HTTPException(status_code=422, detail="no_text_extracted")
+        if not text:
+            soup = BeautifulSoup(r.text, "html.parser")
+            for t in soup(["script","style","noscript"]):
+                t.decompose()
+            text = clean_whitespace(soup.get_text(" "))
+        text = text[:1200]
     
     # Sentence split + chunk    
-    sentences = split_sentences_unicode(text)
-    if not sentences:
-        sentences = [text[:1200]]
+    sentences = split_unicode(text) or [text[:1200]]
     chunks = chunk_by_tokens(
         sentences,
         max_tokens=item.max_tokens,
@@ -63,10 +77,9 @@ async def ingest_url(item: IngestURL):
     # Ensure positive token counts (chunker returns (text, tokens))
     chunks = [(c, max(t, len(c.split()))) for (c, t) in chunks]
     if not chunks:
-        if item.allow_fallback_chunk:
-            chunks = [(text[: min(len(text), 1200)], len(text.split()))]
-        else:
+        if not item.allow_fallback_chunk:
             raise HTTPException(status_code=422, detail="no_chunks_made")
+        chunks = [(text[:1200], len(text.split()))]
     
     # Embeddings + store
     embeds = await embed_texts([c for c, _ in chunks], model=item.embedding_model)
@@ -81,31 +94,6 @@ async def ingest_url(item: IngestURL):
     
     return {
         "doc_id": str(doc_id), 
-        "chunks": len(chunks),
-        "index_name": item.index_name,
-        "max_tokens": item.max_tokens,
-        "overlap": item.overlap,
-        "embedding_model": item.embedding_model or "default"
-    }
-
-@router.post("/pdf")
-async def ingest_pdf(item: IngestPDF):
-    text = extract_text(item.path)
-    sentences = split_sentences(text)
-    chunks = chunk_by_tokens(
-        sentences,
-        max_tokens=item.max_tokens,
-        overlap=item.overlap
-    )
-    if not chunks:
-        raise HTTPException(status_code=422, detail="no_chunks_made")
-    embeds = await embed_texts([c for c,_ in chunks], model=item.embedding_model)
-    with engine.begin() as conn:
-        doc_id = upsert_document(conn, item.path, "pdf", item.lang, item.country, item.topic, index_name=item.index_name)
-        payload = [(c, t, e, item.section) for (c, t), e in zip(chunks, embeds)]
-        insert_chunks(conn, doc_id, payload, index_name=item.index_name)
-    return {
-        "doc_id": str(doc_id),
         "chunks": len(chunks),
         "index_name": item.index_name,
         "max_tokens": item.max_tokens,

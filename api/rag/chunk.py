@@ -27,7 +27,7 @@ def chunk_by_tokens(sentences: List[str], max_tokens: int = 600, overlap: int = 
         chunks.append((" ".join(buf), buf_tokens))
     return chunks
 
-def extract_text(html: str) -> str:
+def extract_html(html: str) -> str:
     # 1) Try trafilatura (article/main content)
     extracted = trafilatura.extract(html, include_comments=False, include_formatting=False, favor_precision=True) or ""
     if len(extracted.strip()) >= 400:
