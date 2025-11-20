@@ -43,7 +43,7 @@ class PurgeIn(BaseModel):
 @router.post("/url")
 async def ingest_url(item: IngestURL):
     fetched = await fetch_text(item.url)
-    if isinstance(r, httpx.Response):
+    if isinstance(fetched, httpx.Response):
         r = fetched
         ctype = (r.headers.get("content-type") or "").lower()
         html_text = r.text
