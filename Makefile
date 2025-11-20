@@ -34,6 +34,10 @@ reindex-default:
 reindex-c300:
 	python3 scripts/reindex_variant.py --index_name c300 --max_tokens 300 --overlap 30 --embedding_model text-embedding-3-small
 
+# 300 w/ 45 overlap
+reindex-c300o45:
+	python3 scripts/reindex_variant.py --index_name c300o45 --max_tokens 300 --overlap 45 --embedding_model text-embedding-3-small
+
 # Larger chunks (900/90)
 reindex-c900:
 	python3 scripts/reindex_variant.py --index_name c900 --max_tokens 900 --overlap 90 --embedding_model text-embedding-3-small
@@ -46,5 +50,6 @@ reindex-large: \
 eval-variants:
 	python3 scripts/eval_retrieval.py --index_name default --k_list 1,3,5 --use_reranker
 	python3 scripts/eval_retrieval.py --index_name c300   --k_list 1,3,5 --use_reranker
+	python3 scripts/eval_retrieval.py --index_name c300o45 --k_list 1,3,5 --use_reranker
 	python3 scripts/eval_retrieval.py --index_name c900   --k_list 1,3,5 --use_reranker
 # (LATER) python3 scripts/eval_retrieval.py --index_name large  --k_list 1,3,5 --use_reranker
