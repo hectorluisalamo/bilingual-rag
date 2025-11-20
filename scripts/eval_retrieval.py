@@ -13,13 +13,14 @@ def load_catalog():
             by_id[d["id"]] = d
     return by_id
 
-def eval_once(client, q, topic_hint=None, lang_pref=("es","en"), use_reranker=True, k=5):
+def eval_once(client, q, topic_hint=None, lang_pref=("es","en"), use_reranker=True, k=5, index_name="default"):
     payload = {
         "query": q,
         "k": k,
         "lang_pref": list(lang_pref),
         "use_reranker": use_reranker,
         "topic_hint": topic_hint,
+        "index_name": index_name
     }
     t0 = time.time()
     r = client.post(API, json=payload, timeout=30)
@@ -44,6 +45,7 @@ def main():
     ap.add_argument("--k_list", default="1,3,5")
     ap.add_argument("--lang", default="es,en")
     ap.add_argument("--use_reranker", action="store_true", default=True)
+    ap.add_argument("--index_name", default="default")
     args = ap.parse_args()
 
     ks = [int(x) for x in args.k_list.split(",")]
@@ -64,14 +66,15 @@ def main():
                     topic_hint = catalog[rid]["topic"]
                     break
             for k in ks:
-                uris, ms, data = eval_once(client, q, topic_hint, langs, args.use_reranker, k)
+                index = args.index_name
+                uris, ms, data = eval_once(client, q, topic_hint, langs, args.use_reranker, k, index)
                 hit = any(uri_matches_relevant(u, rel, catalog) for u in uris)
                 results[k]["hits"] += int(hit)
                 results[k]["total"] += 1
                 results[k]["latencies"].append(ms)
                 out.write(json.dumps({
                     "query": q, "k": k, "hit": hit, "latency_ms": ms,
-                    "topic_hint": topic_hint, "uris": uris, "relevant_ids": rel
+                    "topic_hint": topic_hint, "uris": uris, "relevant_ids": rel, "index_name": index
                 }) + "\n")
 
     summary = {}
