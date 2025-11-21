@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import APIRouter, HTTPException, Request
 from typing import Annotated
-from pydantic import BaseModel, StringConstraints, Field
+from pydantic import BaseModel, StringConstraints, Field, model_validator
 from api.core.config import settings
 from api.rag.embed import embed_texts
 from api.rag.retrieve import search_similar
@@ -24,16 +24,23 @@ router = APIRouter(lifespan=lifespan)
 log = structlog.get_logger(__name__)
 FAQ = None
 NORM_WS = re.compile(r"\s+")
+VALID_TOPICS = {"food","culture","health","civics","education"}
 
 
 class QueryIn(BaseModel):
     query: Annotated[str, StringConstraints(min_length=2, max_length=512)]
-    k: int = Annotated[str, Field(5, ge=1, le=8)]
+    k: int = Field(5, ge=1, le=8)
     lang_pref: list[str] = ["en", "es"]
     use_reranker: bool = True
     topic_hint: str | None = None
     country_hint: str | None = None
     index_name: str = settings.default_index_name
+    
+    @model_validator(mode="after")
+    def _validate_hints(self):
+        if self.topic_hint and self.topic_hint not in VALID_TOPICS:
+            raise ValueError(f"topic_hint must be one of {sorted(VALID_TOPICS)}")
+        return self
     
 class Citation(BaseModel):
     uri: str
@@ -59,11 +66,11 @@ async def ask(req: Request, payload: QueryIn):
     rid = getattr(req.state, "request_id", "na")
     q = normalize_query(payload.query)
     try:
-        rtype, why = route(q, FAQ)
+        rtype, _ = route(q, FAQ)
         if rtype == "faq":
             return QueryOut(route="faq", answer=FAQ[q.lower()], citations=[], request_id=rid)
    
-        # embeddings (one retry on 429/5xx)
+        # embeddings (one retry)
         try:
             embs = await embed_texts([q])
         except Exception:
@@ -78,10 +85,18 @@ async def ask(req: Request, payload: QueryIn):
             country=payload.country_hint,
             index_name=payload.index_name
         )
+        if not sims:
+            log.info("query_nohits",
+                     request_id=rid, k=payload.k, index=payload.index_name,
+                     topic=payload.topic_hint, langs=payload.lang_pref,
+                     ms=getattr(req.state, "duration_ms", 0))
+            return QueryOut(route="rag", answer="No encontré pasajes relevantes.", citations=[], request_id=rid)
+        
+        top_k = max(1, payload.k) # guard against k=0
         if payload.use_reranker and sims:
-            sims = rerank(q, sims, top_k=payload.k)
+            sims = rerank(q, sims, top_k=top_k)
         else:
-            sims = sims[:payload.k]
+            sims = sims[:top_k]
         
         answer = f"Encontré {len(sims)} pasajes relevantes."
         cites = [
@@ -89,11 +104,15 @@ async def ask(req: Request, payload: QueryIn):
             for s in sims
         ]
         
-        log.info("query", request_id=rid, route=rtype, k=payload.k, index=payload.index_name,
-                topic=payload.topic_hint, langs=payload.lang_pref, ms=req.state.duration_ms)
+        log.info("query_ok",
+                 request_id=rid, route=rtype, k=top_k, index=payload.index_name,
+                 topic=payload.topic_hint, langs=payload.lang_pref,
+                 ms=getattr(req.state, "duration_ms", 0))
     
         return QueryOut(route="rag", answer=answer, citations=cites, request_id=rid)
     
+    except ValueError as ve:
+        raise HTTPException(status_code=422, detail={"code":"validation_error","message":str(ve)})
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail={"code":"timeout","message":"upstream timeout"})
     except HTTPException:
