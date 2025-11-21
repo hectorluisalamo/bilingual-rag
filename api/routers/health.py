@@ -2,11 +2,11 @@ from fastapi import APIRouter
 from sqlalchemy import text
 from api.core.db import engine
 from api.core.config import settings
-import os, httpx, redis
+import os, httpx, redis, time
 
 router = APIRouter()
 
-_r = redis.from_url(settings.redis_url) if settings.redis_url else None
+_rds = redis.from_url(settings.redis_url) if settings.redis_url else None
 
 @router.get("/live")
 def live():
@@ -15,11 +15,13 @@ def live():
 @router.get("/ready")
 def ready():
     try:
+        t0 = time.time()
         with engine.begin() as conn:
             conn.execute(text("SELECT 1"))
-        if _r:
-            _r.ping()
-        return {"status": "ok"}
+        d_ms = int((time.time() - t0) * 1000)
+        if _rds:
+            _rds.ping()
+        return {"status": "ok", "d_ms": d_ms, "embeddings": "openai" if settings.openai_api_key else "fallback"}
     except Exception as e:
         return {"status": "degraded", "error": type(e).__name__}
     
