@@ -1,38 +1,82 @@
 name: ci
-on: [push, pull_request]
+
+on:
+  push:
+  pull_request:
+
 jobs:
   test:
     runs-on: ubuntu-latest
+
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
-          POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
           POSTGRES_DB: rag
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+
+    env:
+      DB_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/rag
+      REDIS_URL: redis://localhost:6379/0
+      DEFAULT_INDEX_NAME: c300o45
+      OPENAI_API_KEY: "" 
+      EMBEDDING_MODEL: text-embedding-3-small
+      PYTHONUNBUFFERED: "1"
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.11'}
-      - name: Install
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y libpq-dev
+
+      - name: Install Python deps
         run: |
-          pip install poetry==1.8.3
-          poetry config virtualenvs.create false
-          poetry install
-      - name: Init DB
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || true
+          # if using pyproject, uncomment:
+          # pip install .
+
+      - name: Run migrations
         run: |
-          psql postgresql://postgres:postgres@localhost:5432/rag -f migrations/001_init.sql
-      - name: Lint & Test
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          DB_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/rag
+          psql "postgresql://postgres:postgres@localhost:5432/rag" -f migrations/001_init.sql || true
+          [[ -f migrations/002_index_name.sql ]] && psql "postgresql://postgres:postgres@localhost:5432/rag" -f migrations/002_index_name.sql || true
+          [[ -f migrations/003_ivf_lists_200.sql ]] && psql "postgresql://postgres:postgres@localhost:5432/rag" -f migrations/003_ivf_lists_200.sql || true
+          [[ -f migrations/004_retention.sql ]] && psql "postgresql://postgres:postgres@localhost:5432/rag" -f migrations/004_retention.sql || true
+
+      - name: Start API (background)
         run: |
-          ruff check . --fix
-          pytest -q
+          nohup uvicorn api.main:app --host 0.0.0.0 --port 8000 >/tmp/api.log 2>&1 &
+          echo $! > /tmp/api.pid
+
+      - name: Wait for /health/ready
+        run: |
+          bash scripts/wait_for_ready.sh http://localhost:8000/health/ready 60
+          echo "---- API LOG HEAD ----"
+          head -n 100 /tmp/api.log || true
+
+      - name: Seed minimal corpus
+        run: python3 scripts/seed_minimal.py
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Show API logs on failure
+        if: failure()
+        run: |
+          echo "---- API LOG TAIL ----"
+          tail -n 200 /tmp/api.log || true
