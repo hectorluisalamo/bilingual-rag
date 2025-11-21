@@ -8,3 +8,4 @@ redis
 structlog
 prometheus_client
 pytest
+sqlalchemy
