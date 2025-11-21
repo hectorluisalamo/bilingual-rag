@@ -1,5 +1,9 @@
 # Latino RAG Chatbot
 
+![Static Badge](https://img.shields.io/badge/License-MIT-blue)
+![Static Badge](https://img.shields.io/badge/Built%20with-Python-green)
+[![CI](https://github.com/hectorluisalamo/bilingual-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/hectorluisalamo/bilingual-rag/actions/workflows/ci.yml)
+
 ## Quickstart
 1. `cp .env.example .env` and fill keys
 2. `docker compose up --build`
