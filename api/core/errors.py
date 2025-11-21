@@ -1,17 +1,20 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+import time, uuid
 
-async def json_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(
-        status_code=500,
-        content={"error": "internal_error", "type": exc.__class__.__name__}
-    )
+def json_error(code: str, message: str, context: dict | None = None, status: int = 400):
+    return JSONResponse(status_code=status, content={"code": code, "message": message, "context": context or {}})
 
 class EnforceJSONMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        # only coerce if it looks like HTML on an API path
-        if request.url.path.startswith("/query") and "text/html" in response.headers.get("content-type", ""):
-            response.headers["content-type"] = "application/json"
-        return response
+        request.state.request_id = str(uuid.uuid4())
+        t0 = time.time()
+        try:
+            resp = await call_next(request)
+        except Exception as e:
+            return json_error("internal_error", type(e).__name__, status=500)
+        finally:
+            d_ms = int((time.time() - t0) * 1000)
+            request.state.duration_ms = d_ms
+        return resp
