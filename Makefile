@@ -53,3 +53,15 @@ eval-variants:
 	python3 scripts/eval_retrieval.py --index_name c300o45 --k_list 1,3,5 --use_reranker
 	python3 scripts/eval_retrieval.py --index_name c900   --k_list 1,3,5 --use_reranker
 # (LATER) python3 scripts/eval_retrieval.py --index_name large  --k_list 1,3,5 --use_reranker
+
+.PHONY: test ci eval-deepeval
+
+test:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
+
+ci:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
+
+# Keep DeepEval/Ragas out of pytest autoload; run explicitly here later \
+eval-deepeval: \
+\tpython3 scripts/eval_retrieval.py --index_name $${INDEX:-c300o45} --k_list 1,3,5 --use_reranker
