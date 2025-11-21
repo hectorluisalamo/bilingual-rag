@@ -52,6 +52,7 @@ class QueryOut(BaseModel):
     route: str
     answer: str
     citations: list[dict]
+    request_id: int
     
     
 def normalize_query(q: str) -> str:
@@ -85,28 +86,41 @@ async def ask(req: Request, payload: QueryIn):
             country=payload.country_hint,
             index_name=payload.index_name
         )
-        if not sims:
-            log.info("query_nohits",
-                     request_id=rid, k=payload.k, index=payload.index_name,
-                     topic=payload.topic_hint, langs=payload.lang_pref,
-                     ms=getattr(req.state, "duration_ms", 0))
-            return QueryOut(route="rag", answer="No encontré pasajes relevantes.", citations=[], request_id=rid)
-        
         top_k = max(1, payload.k) # guard against k=0
         if payload.use_reranker and sims:
             sims = rerank(q, sims, top_k=top_k)
         else:
             sims = sims[:top_k]
         
-        answer = f"Encontré {len(sims)} pasajes relevantes."
+        # Build grounded answer from first sentence
+        def first_sentence(txt: str, max_chars: int = 240) -> str:
+            s = (txt or "").strip()
+            cut = s.split(". ")[0]
+            cut = cut if cut else s[:max_chars]
+            return cut[:max_chars].strip()
+
+        if sims:
+            top_snip = sims[0]["text"]
+            answer = first_sentence(top_snip)
+        else:
+            answer = "No encontré pasajes relevantes para esta consulta."
+            
         cites = [
-            {"uri": s["source_uri"], "snippet": s["text"][:220], "date": str(s["published_at"]), "score": s.get("score")}
+            {
+                "uri": s["source_uri"], 
+                "snippet": s["text"][:220], 
+                "date": str(s["published_at"]), 
+                "score": s.get("score")}
             for s in sims
         ]
         
-        log.info("query_ok",
-                 request_id=rid, route=rtype, k=top_k, index=payload.index_name,
-                 topic=payload.topic_hint, langs=payload.lang_pref,
+        log.info("query",
+                 request_id=rid, 
+                 route=rtype, 
+                 k=top_k, 
+                 index=payload.index_name,
+                 topic=payload.topic_hint, 
+                 langs=payload.lang_pref,
                  ms=getattr(req.state, "duration_ms", 0))
     
         return QueryOut(route="rag", answer=answer, citations=cites, request_id=rid)
