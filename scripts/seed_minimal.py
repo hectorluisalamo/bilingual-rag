@@ -14,7 +14,7 @@ def main():
             if r.status_code != 200:
                 print("seed warn:", d["url"], r.status_code, r.text, file=sys.stderr)
             else:
-                print("seed ok:", d.json())
+                print("seed ok:", d)
                 
                 
 if __name__ == "__main__":
