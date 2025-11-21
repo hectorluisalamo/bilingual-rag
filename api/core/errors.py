@@ -12,9 +12,11 @@ class EnforceJSONMiddleware(BaseHTTPMiddleware):
         t0 = time.time()
         try:
             resp = await call_next(request)
-        except Exception as e:
-            return json_error("internal_error", type(e).__name__, status=500)
+        except Exception as exc:
+            return JSONResponse(
+                status_code=500,
+                content={"code":"internal_error","message":type(exc).__name__,"request_id":request.state.request_id},
+            )
         finally:
-            d_ms = int((time.time() - t0) * 1000)
-            request.state.duration_ms = d_ms
+            request.state.duration_ms = int((time.time() - t0) * 1000)
         return resp
