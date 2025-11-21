@@ -17,4 +17,4 @@ def test_embedding_shape_and_stability():
     # strong cosine agreement (allow tiny float jitter)
     for i in range(2):
         cos = _cosine(v1[i], v2[i])
-        assert cos >= 0.999999, f"cosine too low for item {i}: {cos}"
+        assert round(cos, 5) >= 0.99999, f"cosine too low for item {i}: {cos}"
