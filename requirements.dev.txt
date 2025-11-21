@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+psycopg2-binary>=2.9
+pgvector
+httpx
+beautifulsoup4
+redis
+structlog
+prometheus_client
+pytest
