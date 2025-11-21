@@ -52,7 +52,7 @@ class QueryOut(BaseModel):
     route: str
     answer: str
     citations: list[dict]
-    request_id: int
+    request_id: str
     
     
 def normalize_query(q: str) -> str:
