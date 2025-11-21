@@ -31,7 +31,6 @@ jobs:
       DEFAULT_INDEX_NAME: c300o45
       OPENAI_API_KEY: "" 
       EMBEDDING_MODEL: text-embedding-3-small
-      PYTHONUNBUFFERED: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -59,15 +58,28 @@ jobs:
           [[ -f migrations/004_retention.sql ]] && psql "postgresql://postgres:postgres@localhost:5432/rag" -f migrations/004_retention.sql || true
 
       - name: Start API (background)
+        env:
+          PYTHONPATH: .
         run: |
           nohup uvicorn api.main:app --host 0.0.0.0 --port 8000 >/tmp/api.log 2>&1 &
           echo $! > /tmp/api.pid
+          sleep 1
+          echo "API PID: $(cat /tmp/api.pid)"
 
       - name: Wait for /health/ready
         run: |
-          bash scripts/wait_for_ready.sh http://localhost:8000/health/ready 60
-          echo "---- API LOG HEAD ----"
-          head -n 100 /tmp/api.log || true
+          set -eux
+          for i in $(seq 1 10); do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health/live | grep -qE '200|404'; then
+              echo "Port is listening"; break
+            fi
+            sleep 1
+          done
+          bash scripts/wait_for_ready.sh http://localhost:8000/health/ready 120 || {
+            echo "---- API LOG TAIL ----"
+            tail -n 300 /tmp/api.log || true
+            exit 1
+          }
 
       - name: Seed minimal corpus
         run: python3 scripts/seed_minimal.py
