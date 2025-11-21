@@ -7,7 +7,8 @@ from api.rag.embed import embed_texts
 from api.rag.retrieve import search_similar
 from api.rag.rerank import rerank
 from api.rag.router import load_faq, route
-import unicodedata, re, asyncio, structlog
+from api.routers.metrics import REQUESTS, ERRORS, LATENCY, EMB_LAT, DB_LAT
+import unicodedata, re, asyncio, structlog, time
 
 
 @asynccontextmanager
@@ -66,6 +67,7 @@ def normalize_query(q: str) -> str:
 async def ask(req: Request, payload: QueryIn):
     rid = getattr(req.state, "request_id", "na")
     q = normalize_query(payload.query)
+    t0 = time.time()
     try:
         rtype, _ = route(q, FAQ)
         if rtype == "faq":
@@ -73,11 +75,14 @@ async def ask(req: Request, payload: QueryIn):
    
         # embeddings (one retry)
         try:
+            e0 = time.time()
             embs = await embed_texts([q])
+            EMB_LAT.observe((time.time() - e0) * 1000)
         except Exception:
             await asyncio.sleep(0.4)
             embs = await embed_texts([q])
-            
+        
+        s0 = time.time()    
         sims = search_similar(
             embs[0],
             k=max(payload.k, 8),
@@ -86,6 +91,8 @@ async def ask(req: Request, payload: QueryIn):
             country=payload.country_hint,
             index_name=payload.index_name
         )
+        DB_LAT.observe((time.time() - s0) * 1000)
+        
         top_k = max(1, payload.k) # guard against k=0
         if payload.use_reranker and sims:
             sims = rerank(q, sims, top_k=top_k)
@@ -122,6 +129,9 @@ async def ask(req: Request, payload: QueryIn):
                  topic=payload.topic_hint, 
                  langs=payload.lang_pref,
                  ms=getattr(req.state, "duration_ms", 0))
+        
+        LATENCY.observe((time.time() - t0) * 1000)
+        REQUESTS.labels(route=rtype, index=payload.index_name, topic=str(payload.topic_hint), langs=",".join(payload.lang_pref)).inc()
     
         return QueryOut(route="rag", answer=answer, citations=cites, request_id=rid)
     
@@ -129,11 +139,13 @@ async def ask(req: Request, payload: QueryIn):
         raise HTTPException(status_code=422, detail={"code":"validation_error","message":str(ve)})
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail={"code":"timeout","message":"upstream timeout"})
-    except HTTPException:
+    except HTTPException as he:
+        ERRORS.labels(code=str(he.status_code)).inc()
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={"code":"internal_error","message":type(e).__name__})
-
+    except Exception:
+        ERRORS.labels(code="500").inc()
+        raise
+        
 @router.post("/echo")
 async def echo(payload: QueryIn):
     return {"ok": True, "received": payload.model_dump()}
