@@ -26,4 +26,3 @@ data/eval_runs/
 data/*.parquet
 data/*.sqlite
 data/*.db
-requirements.txt
