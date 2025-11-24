@@ -32,7 +32,9 @@ def dbdiag():
             ext = conn.execute(text("SELECT extname FROM pg_extension WHERE extname='vector'")).fetchone()
             docs = conn.execute(text("SELECT count(*) FROM documents")).scalar()
             chks = conn.execute(text("SELECT count(*) FROM chunks")).scalar()
-        return {"vector_ext": bool(ext), "documents": int(docs or 0), "chunks": int(chks or 0)}
+            idxs = conn.execute(text("SELECT index_name, count(*) FROM chunks GROUP BY index_name ORDER BY index_name")).all()
+        return {"vector_ext": bool(ext), "documents": int(docs or 0), "chunks": int(chks or 0),
+                "indices": [{"index_name": r[0], "chunks": int(r[1])} for r in idxs]}
     except Exception as e:
         return {"error": type(e).__name__, "message": str(e)}
 
@@ -58,3 +60,7 @@ async def embeddings_probe():
                 "body": r.json() if r.headers.get("content-type","").startswith("application/json") else r.text[:200]}
     except Exception as e:
         return {"ok": False, "error": type(e).__name__}
+    
+@router.get("/env")
+def env():
+    return {"db_url": settings.db_url, "default_index_name": settings.default_index_name}
