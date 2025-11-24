@@ -4,16 +4,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def _default_db_url():
-    host = os.getenv("DB_HOST", "localhost")
-    return f"postgresql+psycopg2://postgres:postgres@{host}:5432/rag"
-
 class Settings(BaseModel):
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
     default_index_name: str = os.getenv("DEFAULT_INDEX_NAME", "c300o45")
     server_timeout_s: int = int(os.getenv("SERVER_TIMEOUT_S", "10"))
-    db_url: str = os.getenv("DB_URL", _default_db_url())
+    db_url: str = os.getenv("DB_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/rag")
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     reranker_model: str = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-base")
     router_faq_path: str = os.getenv("ROUTER_FAQ_PATH", "./data/samples/faq.jsonl")
@@ -26,5 +22,8 @@ class Settings(BaseModel):
     tout_connect: float = float(os.getenv("TIMEOUT_CONNECT", "5.0"))
     obey_robots: bool = os.getenv("OBEY_ROBOTS", "true").lower() == "true"
     cache_ttl_s: int = int(os.getenv("FETCH_CACHE_TTL_S", "86400"))  # 24h
+    default_index_name: str = os.getenv("DEFAULT_INDEX_NAME", "c300o45")
+    server_timeout_s: int = int(os.getenv("SERVER_TIMEOUT_S", "10"))
+    dev_errors: bool = os.getenv("DEV_ERRORS", "0") == "1"
 
 settings = Settings()
