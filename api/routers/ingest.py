@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 from api.core.db import engine, VECTOR_ADAPTER
 from api.rag.chunk import chunk_by_tokens, extract_html, split_unicode, clean_whitespace
 from api.rag.embed import embed_texts
@@ -29,16 +30,17 @@ class IngestURL(BaseModel):
     overlap: int = 60
     embedding_model: str | None = None
 
-class IngestPDF(BaseModel):
-    path: str
+class IngestRaw(BaseModel):
+    source_uri: str
+    text: str               
     lang: str = "es"
-    topic: str | None = None
-    country: str | None = None
-    section: str | None = None
+    topic: Optional[str] = None
+    country: Optional[str] = None
+    section: Optional[str] = None
     index_name: str = "default"
     max_tokens: int = 600
     overlap: int = 60
-    embedding_model: str | None = None
+    embedding_model: Optional[str] = None
     
 class PurgeIn(BaseModel):
     url: str
@@ -102,3 +104,27 @@ async def fetch_debug(url: str):
     if isinstance(got, httpx.Response):
         return {"kind": "response", "status": got.status_code, "ctype": got.headers.get("content-type")}
     return {"kind": "str", "length": len(str(got))}
+
+@router.post("/raw")
+async def ingest_raw(item: IngestRaw):
+    txt = (item.text or "").strip()
+    if not txt:
+        raise HTTPException(status_code=400, detail="empty_text")
+
+    sentences = split_unicode(txt)
+    chunks = [ct for ct in chunk_by_tokens(sentences, max_tokens=item.max_tokens, overlap=item.overlap) if ct[1] > 0]
+    if not chunks:
+        raise HTTPException(status_code=422, detail="no_chunks_made")
+
+    embeds = await embed_texts([c for c,_ in chunks], model=item.embedding_model)
+    payload = (
+        [(c, t, e, item.section) for (c,t), e in zip(chunks, embeds)]
+        if VECTOR_ADAPTER else
+        [(c, t, _to_pgvector_literal(e), item.section) for (c,t), e in zip(chunks, embeds)]
+    )
+
+    with engine.begin() as conn:
+        doc_id = upsert_document(conn, item.source_uri, "raw", item.lang, item.country, item.topic, index_name=item.index_name)
+        insert_chunks(conn, doc_id, payload, index_name=item.index_name)
+
+    return {"doc_id": str(doc_id), "chunks": len(chunks), "index_name": item.index_name}

@@ -64,3 +64,13 @@ async def embeddings_probe():
 @router.get("/env")
 def env():
     return {"db_url": settings.db_url, "default_index_name": settings.default_index_name}
+
+@router.get("/net")
+def net(url: str = "https://es.wikipedia.org/wiki/Arepa"):
+    t0 = time.time()
+    try:
+        r = httpx.get(url, timeout=5.0)
+        ms = int((time.time() - t0) * 1000)
+        return {"ok": True, "status": r.status_code, "ms": ms}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__}
