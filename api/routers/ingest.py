@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from api.core.db import engine
+from api.core.db import engine, VECTOR_ADAPTER
 from api.rag.chunk import chunk_by_tokens, extract_html, split_unicode, clean_whitespace
 from api.rag.embed import embed_texts
 from api.rag.fetch import fetch_text
@@ -13,6 +13,11 @@ import httpx
 
 router = APIRouter()
 
+ALLOWED_DOMAINS = {
+    "es.wikipedia.org","www.cdc.gov","www.usa.gov","www.irs.gov",
+    "www.uscis.gov","www.vote.gov","www.who.int"
+}
+
 class IngestURL(BaseModel):
     url: str
     lang: str = "es"
@@ -23,7 +28,6 @@ class IngestURL(BaseModel):
     max_tokens: int = 600
     overlap: int = 60
     embedding_model: str | None = None
-    allow_fallback_chunk: bool = True
 
 class IngestPDF(BaseModel):
     path: str
@@ -40,68 +44,31 @@ class PurgeIn(BaseModel):
     url: str
     
 
+def _to_pgvector_literal(vec) -> str:
+    nums = [float(x) for x in vec]
+    return "[" + ",".join(f"{x:.6f}" for x in nums) + "]"
+
+
 @router.post("/url")
 async def ingest_url(item: IngestURL):
     fetched = await fetch_text(item.url)
-    if isinstance(fetched, httpx.Response):
-        r = fetched
-        ctype = (r.headers.get("content-type") or "").lower()
-        html_text = r.text
-        content_bytes = r.content
-    else:
-        # Treat as HTML string with unknown content-type
-        r = None
-        ctype = ""
-        html_text = str(fetched)
-        content_bytes = html_text.encode("utf-8", errors="ignore")
-        
-    is_pdf = ("application/pdf" in ctype) or item.url.lower().endswith(".pdf")
-    
-    if is_pdf:
-        try:
-            # PDF path
-            text = pdf_extract(BytesIO(content_bytes)) or ""
-        except Exception as e:
-            raise HTTPException(status_code=422, detail=f"pdf_extract_failed:{type(e).__name__}")
-        text = clean_whitespace(text)
-    else:
-        # HTML path (trafilatura first, BS4 fallback)
-        txt = extract_html(html_text) or ""
-        txt = clean_whitespace(txt)
-        if len(txt) >= 400:
-            text = txt
-        else:
-            soup = BeautifulSoup(html_text, "html.parser")
-            for tnode in soup(["script","style","noscript","header","footer","nav","aside"]):
-                tnode.decompose()
-            text = clean_whitespace(soup.get_text(" "))
-            
-    if not text or len(text) < 200:
-        if not item.allow_fallback_chunk:
-            raise HTTPException(status_code=422, detail="no_text_extracted")
-        # Take first 1200 chars of visible HTML
-        if not is_pdf:
-            soup = BeautifulSoup(html_text, "html.parser")
-            for tnode in soup(["script","style","noscript"]):
-                tnode.decompose()
-            text = clean_whitespace(soup.get_text(" "))
-        text = text[:1200]
-    
-    # Sentence split + chunk    
-    sentences = split_unicode(text) or [text[:1200]]
-    chunks = chunk_by_tokens(
-        sentences,
-        max_tokens=item.max_tokens,
-        overlap=item.overlap
-    )
-    # Ensure positive token counts (chunker returns (text, tokens))
+    text = BeautifulSoup(fetched, "html.parser").get_text(" ")
+    sentences = split_unicode(text)
+    chunks = [ct for ct in chunk_by_tokens(sentences, max_tokens=item.max_tokens, overlap=item.overlap) if ct[1] > 0]
     if not chunks:
-        if not item.allow_fallback_chunk:
-            raise HTTPException(status_code=422, detail="no_chunks_made")
-        chunks = [(text[:1200], len(text.split()))]
-    
-    # Embeddings + store
-    embeds = await embed_texts([c for c, _ in chunks], model=item.embedding_model)
+        raise HTTPException(status_code=422, detail="no_chunks_made")
+
+    embeds = await embed_texts([c for c,_ in chunks], model=item.embedding_model)
+
+    # If adapter is not active, cast embeddings to vector literal for insert
+    payload = []
+    if VECTOR_ADAPTER:
+        payload = [(c, t, e, item.section) for (c,t), e in zip(chunks, embeds)]
+    else:
+        payload = [(c, t, _to_pgvector_literal(e), item.section) for (c,t), e in zip(chunks, embeds)]
+
+    # store
+    from sqlalchemy import text
     with engine.begin() as conn:
         doc_id = upsert_document(
             conn, item.url, "url", item.lang,

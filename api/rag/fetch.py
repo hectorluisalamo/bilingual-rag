@@ -36,9 +36,7 @@ async def fetch_text(url: str, attempts: int = 3) -> httpx.Response:
                     # Just return empty string; caller can decide to skip re-ingest
                     return ""
             if r.status_code >= 500:
-                last = f"upstream_{r.status_code}"
-                time.sleep(min(2**i, 5))
-                continue
+                raise HTTPException(status_code=r.status_code, detail=f"upstream_{r.status_code}")
             if _rds:
                 if et := r.headers.get("ETag"):
                     _rds.setex(etag_key, settings.cache_ttl_s, et)
