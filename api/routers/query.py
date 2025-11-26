@@ -5,7 +5,7 @@ from pydantic import BaseModel, StringConstraints, Field, model_validator
 from api.core.config import settings
 from sqlalchemy.exc import OperationalError
 from api.rag.embed import embed_texts
-from api.rag.retrieve import search_similar
+from api.rag.retrieve import search_similar, dedup_by_uri
 from api.rag.rerank import rerank
 from api.rag.router import load_faq, route
 from api.routers.metrics import REQUESTS, ERRORS, LATENCY, EMB_LAT, DB_LAT
@@ -121,6 +121,9 @@ async def ask(req: Request, payload: QueryIn):
             sims = rerank(q, sims, top_k=top_k)
         else:
             sims = sims[:top_k]
+            
+        sims = [s for s in sims if (s.get("score") or 0) >= 0.35]
+        sims = dedup_by_uri(sims)[:top_k]
         
         # 5) Build grounded answer from snippet
         def first_sentence(txt: str, max_chars: int = 240) -> str:

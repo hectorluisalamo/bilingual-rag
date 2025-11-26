@@ -2,13 +2,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from api.core.db import engine, VECTOR_ADAPTER
-from api.rag.chunk import chunk_by_tokens, extract_html, split_unicode, clean_whitespace
+from api.rag.chunk import chunk_by_tokens, split_unicode
 from api.rag.embed import embed_texts
 from api.rag.fetch import fetch_text
 from api.rag.store import upsert_document, insert_chunks
+from api.rag.retrieve import _to_pgvector_literal
 from bs4 import BeautifulSoup
-from io import BytesIO
-from pdfminer.high_level import extract_text as pdf_extract
 from sqlalchemy import text as sqltext
 import httpx
 
@@ -44,11 +43,6 @@ class IngestRaw(BaseModel):
     
 class PurgeIn(BaseModel):
     url: str
-    
-
-def _to_pgvector_literal(vec) -> str:
-    nums = [float(x) for x in vec]
-    return "[" + ",".join(f"{x:.6f}" for x in nums) + "]"
 
 
 @router.post("/url")

@@ -2,16 +2,24 @@ from sqlalchemy import text, bindparam
 from api.core.db import engine, VECTOR_ADAPTER
 from typing import List, Dict
 
+
 def _to_pgvector_literal(vec) -> str:
-    """
-    Convert any sequence (ints/strs/floats) to a pgvector literal.
-    If input already looks like a vector literal (starts with '['), return as-is.
-    """
     if isinstance(vec, str) and vec.strip().startswith("["):
         return vec.strip()
     # cast all items to float, ignoring non-numerics
     nums = [float(x) for x in vec]
     return "[" + ",".join(f"{x:.6f}" for x in nums) + "]"
+
+def dedup_by_uri(rows):
+    seen = set()
+    deduped = []
+    for r in rows:
+        uri = r["source_uri"]
+        if uri in seen:
+            continue
+        seen.add(uri)
+        deduped.append(r)
+    return deduped
 
 def _build_sql(use_literal: bool, with_topic: bool, with_country: bool):
     cast = "CAST(:qvec AS vector)" if use_literal else ":qvec"
