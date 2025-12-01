@@ -28,7 +28,7 @@ async def quote_then_summarize(question: str, cands: List[Dict]) -> Dict:
         "If not answerable, return {\"quotes\":[]}."
     )
     # sync wrapper
-    ext = await openai_chat(SYS, extract_prompt, json=True)
+    ext = await openai_chat(SYS, extract_prompt, json_mode=True)
     quotes = ext.get("quotes", [])[:5]
 
     # 2) Abstractive – write 1–3 sentences with cite markers
