@@ -5,6 +5,7 @@ from pydantic import BaseModel, StringConstraints, Field, model_validator
 from api.core.config import settings
 from sqlalchemy.exc import OperationalError
 from api.rag.embed import embed_texts
+from api.rag.generate import quote_then_summarize
 from api.rag.retrieve import search_similar, dedup_by_uri
 from api.rag.rerank import rerank
 from api.rag.router import load_faq, route
@@ -124,24 +125,14 @@ async def ask(req: Request, payload: QueryIn):
             
         sims = [s for s in sims if (s.get("score") or 0) >= 0.35]
         sims = dedup_by_uri(sims)[:top_k]
-        
-        # 5) Build grounded answer from snippet
-        def first_sentence(txt: str, max_chars: int = 240) -> str:
-            t = (txt or "").strip()
-            # Split on end-of-sentence punctuation common in ES; keep fallback
-            parts = re.split(r"(?<=[\.\!\?…])\s+", t)
-            out = parts[0] if parts and parts[0] else t[:max_chars]
-            # Trim inverted marks/whitespace
-            out = unicodedata.normalize("NFKC", out).strip(" \n\r\t¿¡")
-            return out[:max_chars].strip()
 
         if sims:
-            answer = first_sentence(sims[0].get("text", ""))
+            ans = await quote_then_summarize(q, sims)
+            answer = ans["text"]
         else:
             answer = "No encontré pasajes relevantes para esta consulta."
             
         # Cap outgoing citations
-        max_cites = top_k 
         cites = [
             {
                 "uri": s["source_uri"], 
@@ -149,7 +140,7 @@ async def ask(req: Request, payload: QueryIn):
                 "date": str(s.get("published_at")) if s.get("published_at") is not None else None, 
                 "score": s.get("score")
             }
-            for s in sims[:max_cites]
+            for s in sims
         ]
         
         # 6) Logging + metrics (after success)
