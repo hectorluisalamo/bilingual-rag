@@ -1,4 +1,5 @@
 from typing import List, Dict
+import anyio
 from api.core.llm import openai_chat
 
 SYS = (
@@ -21,21 +22,24 @@ def build_context(cands: List[Dict]) -> str:
 async def quote_then_summarize(question: str, cands: List[Dict]) -> Dict:
     # 1) Extractive – select 3–5 short quotes with their source ids
     ctx = build_context(cands)
-    extract_prompt = (
-        f"Question: {question}\n\nContext:\n{ctx}\n\n"
-        "Select 3 short quotes (max 30 words each) that directly answer the question. "
-        "Return JSON: {\"quotes\":[{\"i\":<source_number>,\"text\":\"...\"}...]}. "
-        "If not answerable, return {\"quotes\":[]}."
-    )
-    # sync wrapper
-    ext = await openai_chat(SYS, extract_prompt, json_mode=True)
-    quotes = ext.get("quotes", [])[:5]
+    def _extract_sync():
+        extract_prompt = (
+            f"Question: {question}\n\nContext:\n{ctx}\n\n"
+            "Select up to 3 short quotes (≤30 words each) that directly answer the question. "
+            "Return JSON: {\"quotes\":[{\"i\":<source_number>,\"text\":\"...\"}...]}. "
+            "If not answerable, return {\"quotes\":[]}."
+        )
+        return openai_chat(SYS, extract_prompt, json_mode=True, max_tokens=300)
 
-    # 2) Abstractive – write 1–3 sentences with cite markers
-    sum_prompt = (
-        f"Question: {question}\n\nQuotes:\n{quotes}\n\n"
-        "Write a concise answer (1–3 sentences). After each sentence, add [i] markers "
-        "using the source numbers from the quotes. Do not invent citations."
-    )
-    text = await openai_chat(SYS, sum_prompt)
-    return {"text": text, "quotes": quotes}
+    ext = await anyio.to_thread.run_sync(_extract_sync)
+    quotes = ext.get("quotes", [])[:3] if isinstance(ext, dict) else []
+
+    def _summarize_sync():
+        sum_prompt = (
+            f"Question: {question}\n\nQuotes:\n{quotes}\n\n"
+            "Write a concise definition-style answer (1-2 sentences). "
+            "After each sentence, add [i] markers from the quote source numbers. "
+            "Do not invent facts or citations."
+        )
+        return openai_chat(SYS, sum_prompt, json_mode=False, max_tokens=180)
+
