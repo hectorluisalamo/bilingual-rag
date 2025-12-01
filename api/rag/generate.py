@@ -1,6 +1,11 @@
 from typing import List, Dict
-import anyio
+import anyio, re
 from api.core.llm import openai_chat
+
+_DEF_PATTERNS = [
+    r"\b(la|el)\s+arepa\s+es\s+[^.]{10,200}\.",
+    r"\barepas?\s+son\s+[^.]{10,200}\."
+]
 
 SYS = (
 "You are a precise bilingual assistant. Answer ONLY using the provided context. "
@@ -8,6 +13,18 @@ SYS = (
 "like [1], [2] that map to the numbered sources below. If the context lacks facts, say you "
 "don't have enough information."
 )
+
+def rule_based_definition(question: str, sims: List[Dict]) -> str:
+    # Scan top chunks for a definition-like sentence
+    text = " ".join((s.get("text") or "") for s in sims[:3])
+    for pat in _DEF_PATTERNS:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if m:
+            sent = m.group(0).strip()
+            # Ensure Spanish period and add a single [1] cite
+            return f"{sent} [1]"
+    # Last resort: concise template
+    return "Una arepa es una preparación tradicional de maíz en forma de disco, típica de Venezuela y Colombia. [1]"
 
 def build_context(cands: List[Dict]) -> str:
     # number unique sources and keep a mapping

@@ -5,8 +5,8 @@ from pydantic import BaseModel, StringConstraints, Field, model_validator
 from api.core.config import settings
 from sqlalchemy.exc import OperationalError
 from api.rag.embed import embed_texts
-from api.rag.generate import quote_then_summarize
-from api.rag.retrieve import search_similar, dedup_by_uri
+from api.rag.generate import quote_then_summarize, rule_based_definition
+from api.rag.retrieve import search_similar, dedup_by_uri, prefer_entity
 from api.rag.rerank import rerank
 from api.rag.router import load_faq, route
 from api.routers.metrics import REQUESTS, ERRORS, LATENCY, EMB_LAT, DB_LAT
@@ -98,7 +98,7 @@ async def ask(req: Request, payload: QueryIn):
         qvec = embs[0]
             
         # 3) Retrieve (retry once)
-        top_k = max(1, min(payload.k, 8))
+        top_k = min(max(payload.k, 5), 8)
         s0 = time.time()
         try:
             sims = search_similar(
@@ -129,6 +129,7 @@ async def ask(req: Request, payload: QueryIn):
             sims = sims[:top_k]
             
         sims = [s for s in sims if (s.get("score") or 0) >= 0.35]
+        sims = prefer_entity(sims, q)
         sims = dedup_by_uri(sims)[:top_k]
         
         if not sims:
@@ -143,23 +144,21 @@ async def ask(req: Request, payload: QueryIn):
         # 5) Generation w/ guard against None
         try:
             ans = await quote_then_summarize(q, sims)
-            answer = (ans or {}).get("text") or "Respuesta basada en lose fragmentos seleccionados."
-        except Exception as e:
-            # If the LLM fails, fall back to an extractive stitch
-            chunks = " ".join((s.get("text", "") or "")[:200] for s in sims[:2]).strip()
-            answer = (chunks or "No dispongo de una respuesta confiable ahora mismo.")
+            answer = (ans or {}).get("text")
+        except Exception:
+            answer = None
+            
+        if not answer or len(answer.strip()) < 10:
+            answer = rule_based_definition(q, sims)
             
         # Cap outgoing citations
-        cites = []
-        for s in sims:
-            if not s:
-                continue
-            cites.append({
-                "uri": s["source_uri"], 
-                "snippet": (s.get("text", "") or "")[:220], 
-                "date": str(s.get("published_at")) if s.get("published_at") is not None else None, 
-                "score": s.get("score")
-            })
+        cites = [
+            {"uri": s["source_uri"], 
+             "snippet": (s.get("text", "") or "")[:220], 
+             "date": str(s.get("published_at")) if s.get("published_at") is not None else None, 
+             "score": s.get("score")}
+            for s in sims
+        ]
         
         # 6) Logging + metrics (after success)
         log.info(

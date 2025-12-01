@@ -1,7 +1,9 @@
 from sqlalchemy import text, bindparam
 from api.core.db import engine, VECTOR_ADAPTER
 from typing import List, Dict
+import re
 
+_WORD = re.compile(r"\w+", re.UNICODE)
 
 def _to_pgvector_literal(vec) -> str:
     if isinstance(vec, str) and vec.strip().startswith("["):
@@ -9,6 +11,35 @@ def _to_pgvector_literal(vec) -> str:
     # cast all items to float, ignoring non-numerics
     nums = [float(x) for x in vec]
     return "[" + ",".join(f"{x:.6f}" for x in nums) + "]"
+
+def _norm(s: str) -> str:
+    # lowercase, strip accents-ish by NFKD ASCII fallback
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    return s.lower()
+
+def entity_from_query(q: str) -> str | None:
+    # take the longest alphabetic token (very simple entity guess)
+    toks = [t for t in _WORD.findall(q) if t.isalpha()]
+    return max(toks, key=len).lower() if toks else None
+
+def prefer_entity(rows: List[Dict], q: str) -> List[Dict]:
+    ent = entity_from_query(q)
+    if not ent:
+        return rows
+    ent = _norm(ent)
+    scored = []
+    for r in rows:
+        uri = _norm(r.get("source_uri", ""))
+        txt = _norm(r.get("text", ""))
+        bonus = 0
+        if f"/{ent}" in uri:
+            bonus += 0.4
+        if f"{ent} " in txt or f" {ent}" in txt:
+            bonus += 0.2
+        scored.append(( (r.get("score") or 0) + bonus, r))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [r for _, r in scored]
 
 def dedup_by_uri(rows):
     seen = set()
