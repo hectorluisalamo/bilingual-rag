@@ -92,14 +92,18 @@ async def ask(req: Request, payload: QueryIn):
             await asyncio.sleep(0.4)
             embs = await embed_texts([q])
         EMB_LAT.observe((time.time() - e0) * 1000)
+        if not embs or not isinstance(embs, list) or embs[0] is None:
+            raise HTTPException(status_code=503, detail={"code": "embeddings_unavailable", "message": "no_vector", "request_id": rid})
+        
+        qvec = embs[0]
             
         # 3) Retrieve (retry once)
         top_k = max(1, min(payload.k, 8))
         s0 = time.time()
         try:
             sims = search_similar(
-                embs[0],
-                k=max(top_k, 8),
+                qvec,
+                k=top_k,
                 lang_filter=tuple(langs),
                 topic=payload.topic_hint,
                 country=payload.country_hint,
@@ -109,13 +113,14 @@ async def ask(req: Request, payload: QueryIn):
             await asyncio.sleep(0.2)
             sims = search_similar(
                 embs[0],
-                k=max(top_k, 8),
+                k=top_k,
                 lang_filter=tuple(langs),
                 topic=payload.topic_hint,
                 country=payload.country_hint,
                 index_name=payload.index_name
             )
         DB_LAT.observe((time.time() - s0) * 1000)
+        sims = sims or []
         
         # 4) Rerank / slice
         if payload.use_reranker and sims:
@@ -125,23 +130,36 @@ async def ask(req: Request, payload: QueryIn):
             
         sims = [s for s in sims if (s.get("score") or 0) >= 0.35]
         sims = dedup_by_uri(sims)[:top_k]
-
-        if sims:
+        
+        if not sims:
+            # graceful empty result — still 200
+            return QueryOut(
+                route="rag",
+                answer="No tengo información suficiente con las fuentes actuales.",
+                citations=[],
+                request_id=rid
+            )
+            
+        # 5) Generation w/ guard against None
+        try:
             ans = await quote_then_summarize(q, sims)
-            answer = ans["text"]
-        else:
-            answer = "No encontré pasajes relevantes para esta consulta."
+            answer = (ans or {}).get("text") or "Respuesta basada en lose fragmentos seleccionados."
+        except Exception as e:
+            # If the LLM fails, fall back to an extractive stitch
+            chunks = " ".join((s.get("text", "") or "")[:200] for s in sims[:2]).strip()
+            answer = (chunks or "No dispongo de una respuesta confiable ahora mismo.")
             
         # Cap outgoing citations
-        cites = [
-            {
+        cites = []
+        for s in sims:
+            if not s:
+                continue
+            cites.append({
                 "uri": s["source_uri"], 
                 "snippet": (s.get("text", "") or "")[:220], 
                 "date": str(s.get("published_at")) if s.get("published_at") is not None else None, 
                 "score": s.get("score")
-            }
-            for s in sims
-        ]
+            })
         
         # 6) Logging + metrics (after success)
         log.info(
@@ -159,23 +177,13 @@ async def ask(req: Request, payload: QueryIn):
     
         return QueryOut(route="rag", answer=answer, citations=cites, request_id=rid)
     
-    except ValueError as ve:
-        ERRORS.labels(code="422").inc()
-        raise HTTPException(status_code=422, detail={"code":"validation_error","message":str(ve), "request_id": rid})
-    except asyncio.TimeoutError:
-        ERRORS.labels(code="504").inc()
-        raise HTTPException(status_code=504, detail={"code":"timeout","message":"upstream timeout", "request_id": rid})
-    except HTTPException as he:
-        ERRORS.labels(code=str(he.status_code)).inc()
-        # ensure request_id bubbles back
-        det = he.detail if isinstance(he.detail, dict) else {"code":"http_error","message":str(he.detail)}
-        det.setdefault("request_id", rid)
-        raise HTTPException(status_code=he.status_code, detail=det)
+    except HTTPException:
+        raise
     except Exception as e:
-        ERRORS.labels(code="500").inc()
-        # Include full repr in dev mode (from settings.dev_errors)
-        msg = repr(e) if getattr(settings, "dev_errors", False) else type(e).__name__
-        raise HTTPException(status_code=500, detail={"code":"internal_error","message":msg, "request_id": rid})
+        # Dev-friendly error message if enabled
+        msg = repr(e) if settings.dev_errors else type(e).__name__
+        raise HTTPException(status_code=500, detail={"code":"internal_error","message":msg,"request_id":rid})
+
         
 @router.post("/echo")
 async def echo(payload: QueryIn):

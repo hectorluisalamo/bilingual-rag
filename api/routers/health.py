@@ -74,3 +74,12 @@ def net(url: str = "https://es.wikipedia.org/wiki/Arepa"):
         return {"ok": True, "status": r.status_code, "ms": ms}
     except Exception as e:
         return {"ok": False, "error": type(e).__name__}
+    
+@router.get("/emb")
+async def emb_probe(q: str = "hola"):
+    from api.rag.embed import embed_texts
+    vecs = await embed_texts([q])
+    return {
+        "ok": bool(vecs and isinstance(vecs, list) and vecs[0] is not None), 
+        "dim": len(vecs[0]) if vecs and vecs[0] is not None else 0
+    }
