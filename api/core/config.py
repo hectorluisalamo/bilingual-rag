@@ -7,6 +7,7 @@ load_dotenv()
 class Settings(BaseModel):
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    llm_model: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
     default_index_name: str = os.getenv("DEFAULT_INDEX_NAME", "c300o45")
     server_timeout_s: int = int(os.getenv("SERVER_TIMEOUT_S", "10"))
     db_url: str = os.getenv("DB_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/rag")
