@@ -26,3 +26,4 @@ data/eval_runs/
 data/*.parquet
 data/*.sqlite
 data/*.db
+docker-compose.yml 

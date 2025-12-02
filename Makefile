@@ -1,20 +1,14 @@
-.PHONY: up down test fmt seed
-
+.PHONY: up down logs seed health
 up:
-	docker compose up --build
-
+	docker compose up -d --build
 down:
 	docker compose down -v
-
-fmt:
-	ruff check . --fix
-
-test:
-	docker compose run --rm api pytest -q
-
+logs:
+	docker compose logs -f --tail=200
+health:
+	curl -s http://localhost:8000/health/ready | jq
 seed:
-	curl -X POST http://localhost:8000/ingest/url -H "Content-Type: application/json" \
-	  -d '{"url":"https://es.wikipedia.org/wiki/Arepa","lang":"es","topic":"food","country":"VE"}'
+	bash scripts/ingest_catalog.sh
 
 .PHONY: test
 test:
