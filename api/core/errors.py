@@ -1,13 +1,26 @@
-from fastapi import Request
+from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
-from fastapi import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-import logging, time, uuid, traceback
+import logging, time, uuid, json
 
 log = logging.getLogger("api.errors")
 
+def _to_jsonable(obj):
+    try:
+        json.dumps(obj)
+        return obj
+    except TypeError:
+        return str(obj)
+
 def json_error(code: str, message: str, context: dict | None = None, status: int = 400):
-    return JSONResponse(status_code=status, content={"code": code, "message": message, "context": context or {}})
+    safe_ctx = {}
+    if isinstance(context, dict):
+        for k, v in context.items():
+            if isinstance(v, Request):
+                safe_ctx[k] = {"path": str(v.url), "method": v.method}
+            else:
+                safe_ctx[k] = _to_jsonable(v)
+    return JSONResponse(status_code=status, content={"code": code, "message": message, "context": safe_ctx})
 
 class EnforceJSONMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -16,11 +29,11 @@ class EnforceJSONMiddleware(BaseHTTPMiddleware):
         try:
             resp = await call_next(request)
             return resp
-        except Exception:
-            # Let FastAPI handle the exception (status code, etc)
+        except HTTPException:
+            # Let FastAPI handle HTTPExceptions
             raise
         except Exception as exc:
-            # Log full traceback
+            # Log
             log.exception(f"Unhandled exception for request {request.state.request_id} {request.url.path}")
             return JSONResponse(
                 status_code=500,
