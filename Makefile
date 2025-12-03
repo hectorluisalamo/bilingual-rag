@@ -1,12 +1,23 @@
-.PHONY: up down logs seed health
+.PHONY: up down logs
 up:
 	docker compose up -d --build
 down:
 	docker compose down -v
 logs:
 	docker compose logs -f --tail=200
+
+# ---- Health check ----
+HEALTH_URL ?= http://localhost:8000/health/ready
+
+.PHONY: health
 health:
-	curl -s http://localhost:8000/health/ready | jq
+	@echo "→ GET /health/ready"
+	@set -e; \
+	OUT="$$(curl -sS -m 5 "$(HEALTH_URL)")" || { echo "health: curl failed"; exit 1; }; \
+	echo "$$OUT" | jq . >/dev/null 2>&1 || { echo "health: invalid JSON: $$OUT"; exit 1; }; \
+	STAT="$$(echo "$$OUT" | jq -r .status)"; \
+	[ "$$STAT" = "ok" ] || { echo "health: not ok: $$OUT"; exit 1; }; \
+	echo "OK: $$OUT"
 
 # ---- Seeding config ----
 API_URL       ?= http://localhost:8000
