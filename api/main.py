@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from api.core.errors import json_error, EnforceJSONMiddleware
-import api.core.logging
 from api.routers import ingest, query, health
 
 app = FastAPI(title="Bilingual RAG Chatbot")
