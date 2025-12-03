@@ -53,7 +53,7 @@ async def ingest_url(item: IngestURL):
     sentences = split_unicode(text)
     chunks = [ct for ct in chunk_by_tokens(sentences, max_tokens=item.max_tokens, overlap=item.overlap) if ct[1] > 0]
     if not chunks and len(text) >= 600:
-        chunks = [ (text[:2000],  min(len(text[:2000].split()), item.max_tokens)) ]
+        chunks = [(text[:2000],  min(len(text[:2000].split()), item.max_tokens)) ]
 
     if not chunks:
         raise HTTPException(status_code=422, detail={"code":"no_chunks_made","len":len(text)})
