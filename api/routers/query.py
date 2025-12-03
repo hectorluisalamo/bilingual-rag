@@ -44,19 +44,7 @@ class QueryIn(BaseModel):
         if self.topic_hint and self.topic_hint not in VALID_TOPICS:
             raise ValueError(f"topic_hint must be one of {sorted(VALID_TOPICS)}")
         return self
-    
-class Citation(BaseModel):
-    uri: str
-    snippet: str
-    date: str | None = None
-    score: float | None = None
-
-class QueryOut(BaseModel):
-    route: str
-    answer: str
-    citations: list[dict]
-    request_id: str
-    
+      
     
 def normalize_query(q: str) -> str:
     q = unicodedata.normalize("NFKC", q)
@@ -108,30 +96,25 @@ async def ask(req: Request, payload: QueryIn):
     rid = getattr(req.state, "request_id", "na")
     q = normalize_query(payload.query)
     index_name = payload.index_name or os.getenv("DEFAULT_INDEX_NAME", "c300o45")
-    top_k = max(payload.k, 8)
-    lang = payload.lang_pref or "es"
+    lang = payload.lang_pref
+    sims: List = []
+    cites: List[dict] = []
+    answer: str = ""
     logger.info("req start id=%s q=%r k=%s lang=%s rerank=%s index=%s",
-            rid, q, top_k, lang, payload.use_reranker, index_name)
+            rid, q, payload.k, lang, payload.use_reranker, index_name)
     
-    # --- TEST MODE ---
+    # Test mode for CI
     if os.getenv("TEST_MODE") == "1":
         return {
             "route": "test_stub",
-            "answer": f"Echo: {payload.query}",
+            "answer": f"Echo: {q}",
             "citations": [],
             "request_id": rid
         }
-        
-    t0 = time.time()  
+    
+    t0 = time.time()     
     try:
-        # FAQ short-circuit
-        rtype, _ = route(q, FAQ)
-        if rtype == "faq":
-            REQUESTS.labels(route="faq", index=index_name, topic=str(payload.topic_hint), lang=lang).inc()
-            LATENCY.observe((time.time() - t0) * 1000)
-            return QueryOut(route="faq", answer=FAQ[q.lower()], citations=[], request_id=rid)
-   
-        # Embed
+       # Embed
         e0 = time.time()
         embs = await embed_texts([q])
         EMB_LAT.observe((time.time() - e0) * 1000)
@@ -143,8 +126,8 @@ async def ask(req: Request, payload: QueryIn):
         s0 = time.time()
         sims = search_similar(
             qvec,
-            k=top_k,
-            lang_filter=lang,
+            k=max(payload.k, 8),
+            lang_filter=tuple(lang or ("es", "en")),
             topic=payload.topic_hint,
             country=payload.country_hint,
             index_name=index_name
@@ -161,32 +144,28 @@ async def ask(req: Request, payload: QueryIn):
         if not sims:
             sims = search_similar(
                 qvec,
-                k=top_k,
-                lang_filter=lang,
+                k=max(payload.k, 8),
+                lang_filter=("es", "en"),
                 topic=None,
                 country=payload.country_hint,
                 index_name=index_name
             )
         DB_LAT.observe((time.time() - s0) * 1000)
-        logger.debug("pre-rerank n=%d id=%s", len(sims or []), rid)
+        logger.debug("retrieved=%d id=%s", len(sims or []), rid)
         
         # Guarded reranker
         sims = [s for s in (sims or []) if _as_text(s)]
-        sims = dedup_by_uri(sims)
-        sims = prefer_entity(q, sims)
-        logger.debug("post-filter n=%d id=%s", len(sims), rid)
+        logger.debug("post-filter=%d id=%s", len(sims), rid)
 
         if payload.use_reranker and sims:
             logger.debug("rerank start id=%s", rid)
             # Ensure each item has a string to rank
-            sims = rerank(q, sims, top_k=top_k)
+            sims = rerank(q, sims, top_k=payload.k)
             logger.debug("rerank done n=%d id=%s", len(sims), rid)
-
         else:
-            sims = sims[:top_k]
+            sims = sims[: payload.k]
             
         # Build citations safely
-        cites = []
         for s in sims:
             if isinstance(s, Mapping):
                 cites.append({
@@ -215,25 +194,11 @@ async def ask(req: Request, payload: QueryIn):
         LATENCY.observe((time.time() - t0) * 1000)
         REQUESTS.labels(route="rag", index=index_name, topic=str(payload.topic_hint), lang=lang).inc()
     
-        return {route: "rag", "answer": answer, "citations": cites, "request_id": rid}
+        return {"route": "rag", "answer": answer, "citations": cites, "request_id": rid}
     
     except Exception as e:
-        # dump rich context to logs
-        ctx = {
-            "id": rid,
-            "etype": type(e).__name__,
-            "stage": "unknown",
-            "sims_len": len(sims or []),
-            "sims0_type": (type(sims[0]).__name__ if sims else None),
-        }
-        try:
-            if sims and isinstance(sims[0], dict):
-                ctx["sims0_keys"] = list(sims[0].keys())
-        except Exception:
-            pass
-        logger.error("query_failed %s\n%s", ctx, traceback.format_exc())
-
-        # Return schema-conformant response so CI/tests pass
+        # Log rich context; return schema-conformant error
+        logger.exception("query_failed id=%s etype=%s sims_len=%s", rid, type(e).__name__, len(sims or []))
         return {
             "route": "error",
             "answer": "",
