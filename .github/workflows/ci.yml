@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on:
   push:
@@ -7,93 +7,46 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: rag
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
-      redis:
-        image: redis:7
-        ports: ["6379:6379"]
-
     env:
-      DB_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/rag
-      REDIS_URL: redis://localhost:6379/0
-      DEFAULT_INDEX_NAME: c300o45
-      OPENAI_API_KEY: "" 
-      EMBEDDING_MODEL: text-embedding-3-small
-
+      PYTHONUNBUFFERED: "1"
+      PORT: "8000"
+      TEST_MODE: "1"
+      DEFAULT_INDEX_NAME: "c300o45"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Python deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y libpq-dev
-
-      - name: Install Python deps
+      - name: Install deps
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-        env:
-          GIT_ASKPASS: /bin/echo
-
-      - name: Run migrations
-        run: |
-          psql "postgresql://postgres:postgres@localhost:5432/rag" -f migrations/001_init.sql || true
-          [[ -f migrations/002_index_name.sql ]] && psql "postgresql://postgres:postgres@localhost:5432/rag" -f migrations/002_index_name.sql || true
-          [[ -f migrations/003_ivf_lists_200.sql ]] && psql "postgresql://postgres:postgres@localhost:5432/rag" -f migrations/003_ivf_lists_200.sql || true
-          [[ -f migrations/004_retention.sql ]] && psql "postgresql://postgres:postgres@localhost:5432/rag" -f migrations/004_retention.sql || true
+          python -m pip install -U pip
+          pip install -e .             # or: pip install -r requirements.txt
+          pip install uvicorn[standard] httpx pytest
 
       - name: Start API (background)
-        env:
-          PYTHONPATH: ${{ github.workspace }}
         run: |
-          nohup python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 >/tmp/api.log 2>&1 &
-          echo $! > /tmp/api.pid
+          uvicorn api.main:app --host 127.0.0.1 --port $PORT --log-level warning &
+          echo $! > uvicorn.pid
+          sleep 2
 
-      - name: Wait for /health/ready
+      - name: Wait for health
         run: |
-          set -eux
-          for i in $(seq 1 10); do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health/live | grep -qE '200|404'; then
-              echo "Port is listening"; break
-            fi
-            sleep 1
+          for i in {1..20}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health/ready || true)
+            if [ "$code" = "200" ]; then echo "API healthy"; exit 0; fi
+            sleep 0.5
           done
-          bash scripts/wait_for_ready.sh http://localhost:8000/health/ready 120 || {
-            echo "---- API LOG TAIL ----"
-            tail -n 300 /tmp/api.log || true
-            exit 1
-          }
-
-      - name: Seed minimal corpus
-        run: python3 scripts/seed_minimal.py
+          echo "API did not become healthy"; exit 1
 
       - name: Run tests
         env:
-          PYTHONPATH: ${{ github.workspace }}
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-          TEST_MODE: "1"
+          BASE: "http://127.0.0.1:${{ env.PORT }}"
         run: pytest -q
 
-      - name: Show API logs on failure
+      - name: Dump logs on failure
         if: failure()
         run: |
-          echo "---- API LOG TAIL ----"
-          tail -n 200 /tmp/api.log || true
+          cat uvicorn.pid | xargs -I {} sh -c 'echo "uvicorn pid: {}"; ps -p {} -o pid,cmd || true'
