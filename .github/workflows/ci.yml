@@ -89,6 +89,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          TEST_MODE: "1"
         run: pytest -q
 
       - name: Show API logs on failure
