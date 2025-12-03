@@ -15,15 +15,12 @@ def live():
 @router.get("/ready")
 def ready():
     try:
-        t0 = time.time()
-        with engine.begin() as conn:
-            conn.execute(text("SELECT 1"))
-        d_ms = int((time.time() - t0) * 1000)
-        if _rds:
-            _rds.ping()
-        return {"status": "ok", "d_ms": d_ms, "embeddings": "openai" if settings.openai_api_key else "fallback"}
-    except Exception as e:
-        return {"status": "degraded", "error": type(e).__name__}
+        with engine.connect() as conn:
+            conn.execute("SELECT 1")
+        db = "ok"
+    except Exception:
+        db = "degraded"
+    return {"status": "ok", "db": db}
     
 @router.get("/dbdiag")
 def dbdiag():
