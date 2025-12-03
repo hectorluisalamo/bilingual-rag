@@ -80,3 +80,14 @@ async def emb_probe(q: str = "hola"):
         "ok": bool(vecs and isinstance(vecs, list) and vecs[0] is not None), 
         "dim": len(vecs[0]) if vecs and vecs[0] is not None else 0
     }
+
+@router.get("/health/ready")
+def ready():
+    # cheap DB ping; don't crash on failure
+    try:
+        with engine.connect() as conn:
+            conn.execute("SELECT 1")
+        db = "ok"
+    except Exception:
+        db = "degraded"
+    return {"status": "ok", "db": db}
