@@ -102,8 +102,8 @@ def _select_sentences(query: str, texts: List[str], max_sentences: int = 3) -> L
     return out
 
 
-@router.post("", response_model=QueryOut)
-@router.post("/", response_model=QueryOut)
+@router.post("")
+@router.post("/")
 async def ask(req: Request, payload: QueryIn):
     rid = getattr(req.state, "request_id", "na")
     
@@ -130,7 +130,7 @@ async def ask(req: Request, payload: QueryIn):
         # FAQ short-circuit
         rtype, _ = route(q, FAQ)
         if rtype == "faq":
-            REQUESTS.labels(route="faq", index=payload.index_name, topic=str(payload.topic_hint), langs=",".join(langs)).inc()
+            REQUESTS.labels(route="faq", index=index_name, topic=str(payload.topic_hint), langs=",".join(langs)).inc()
             LATENCY.observe((time.time() - t0) * 1000)
             return QueryOut(route="faq", answer=FAQ[q.lower()], citations=[], request_id=rid)
    
@@ -150,7 +150,7 @@ async def ask(req: Request, payload: QueryIn):
             lang_filter=tuple(langs),
             topic=payload.topic_hint,
             country=payload.country_hint,
-            index_name=payload.index_name
+            index_name=index_name
         )
 
         # Fallback if empty
@@ -159,21 +159,21 @@ async def ask(req: Request, payload: QueryIn):
                 qvec,
                 k=top_k,
                 lang_filter=tuple(langs),
-                topic=payload.topic_hint,
+                topic=None,
                 country=payload.country_hint,
-                index_name=payload.index_name
+                index_name=index_name
             )
         DB_LAT.observe((time.time() - s0) * 1000)
         
         # Guarded reranker
         if payload.use_reranker and sims:
             # Ensure each item has a string to rank
-            sims = [s for s in sims if isinstance(_as_text(s), str)]
+            sims = [s for s in sims if _as_text(s)]
             sims = rerank(q, sims, top_k=top_k)
         else:
-            sims = sims[:top_k]
+            sims = sims[: top_k]
             
-        # Build citations robustly
+        # Build citations safely
         cites = []
         for s in sims:
             if isinstance(s, Mapping):
@@ -205,15 +205,15 @@ async def ask(req: Request, payload: QueryIn):
             request_id=rid, 
             route="rag", 
             k=top_k, 
-            index=payload.index_name,
+            index=index_name,
             topic=payload.topic_hint, 
             langs=langs,
             ms=getattr(req.state, "duration_ms", int((time.time() - t0) * 1000))
         )
         LATENCY.observe((time.time() - t0) * 1000)
-        REQUESTS.labels(route="rag", index=payload.index_name, topic=str(payload.topic_hint), langs=",".join(langs)).inc()
+        REQUESTS.labels(route="rag", index=index_name, topic=str(payload.topic_hint), langs=",".join(langs)).inc()
     
-        return QueryOut(route="rag", answer=answer, citations=cites, request_id=rid)
+        return {route: "rag", "answer": answer, "citations": cites, "request_id": rid}
     
     except Exception as e:
         # Structured error if not TEST_MODE
