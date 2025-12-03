@@ -1,53 +1,39 @@
 name: CI
-
-on:
-  push:
-  pull_request:
+on: [push, pull_request]
 
 jobs:
   test:
     runs-on: ubuntu-latest
     env:
       PYTHONUNBUFFERED: "1"
-      PORT: "8000"
-      TEST_MODE: "1"
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-      DEFAULT_INDEX_NAME: "c300o45"
+      TEST_MODE: "1"
+      PORT: "8000"
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
 
       - name: Install deps
         run: |
           python -m pip install -U pip
-          pip install -e .             # or: pip install -r requirements.txt
-          pip install uvicorn[standard] httpx pytest
+          pip install -r requirements-ci.txt
+          pip install pytest
 
-      - name: Start API (background)
+      - name: Start API
+        env:
+          PYTHONPATH: .
         run: |
           uvicorn api.main:app --host 127.0.0.1 --port $PORT --log-level warning &
           echo $! > uvicorn.pid
-          sleep 2
-
-      - name: Wait for health
-        run: |
-          for i in {1..20}; do
+          for i in {1..30}; do
             code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health/ready || true)
-            if [ "$code" = "200" ]; then echo "API healthy"; exit 0; fi
+            [ "$code" = "200" ] && exit 0
             sleep 0.5
           done
-          echo "API did not become healthy"; exit 1
+          echo "API not healthy"; exit 1
 
       - name: Run tests
         env:
           BASE: "http://127.0.0.1:${{ env.PORT }}"
         run: pytest -q
-
-      - name: Dump logs on failure
-        if: failure()
-        run: |
-          cat uvicorn.pid | xargs -I {} sh -c 'echo "uvicorn pid: {}"; ps -p {} -o pid,cmd || true'
