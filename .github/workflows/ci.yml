@@ -11,6 +11,7 @@ jobs:
       PYTHONUNBUFFERED: "1"
       PORT: "8000"
       TEST_MODE: "1"
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
       DEFAULT_INDEX_NAME: "c300o45"
     steps:
       - uses: actions/checkout@v4
