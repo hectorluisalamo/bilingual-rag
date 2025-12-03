@@ -3,28 +3,35 @@ import streamlit as st
 
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
-def post_query(q: str, k: int = 5, langs= ["es"], use_reranker=True, topic_hint=None, index_name=None):
+def post_query(query: str, k: int = 5, langs = ["es"], use_reranker=True,
+               topic_hint=None, index_name=None):
     payload = {
-        "query": q,
+        "query": query,
         "k": k,
-        "lang_pref": langs or ["es", "en"],
+        "lang_pref": langs,
         "use_reranker": use_reranker,
         "topic_hint": topic_hint,
         "index_name": index_name,
     }
     t0 = time.time()
-    timeout = httpx.Timeout(connect=5.0, read=10.0)
-    for attempt in range(2):
+    timeout = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=10.0)
+
+    last_err = None
+    for attempt in range(2):  # tiny retry
         try:
             with httpx.Client(timeout=timeout, follow_redirects=True) as client:
                 r = client.post(f"{API_URL}/query/", json=payload)
             r.raise_for_status()
-            dt = int((time.time() - t0) * 1000)
-            return r.json(), dt, payload
+            dt_ms = int((time.time() - t0) * 1000)
+            return r, dt_ms, payload
         except (httpx.ReadTimeout, httpx.ConnectError) as e:
+            last_err = e
             if attempt == 0:
                 continue
             raise
+        except httpx.HTTPStatusError as e:
+            # still return response for UI to show payload
+            return e.response, int((time.time() - t0) * 1000), payload
 
 st.set_page_config(page_title="Latino RAG", page_icon="🫓", layout="centered")
 
