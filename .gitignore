@@ -26,4 +26,7 @@ data/eval_runs/
 data/*.parquet
 data/*.sqlite
 data/*.db
-docker-compose.yml 
+docker-compose.yml
+data/docs_catalog_wiki*
+data/docs_catalog.fail*
+data/docs_catalog.ok.jsonl
