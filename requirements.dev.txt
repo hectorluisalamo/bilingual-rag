@@ -12,3 +12,4 @@ sqlalchemy
 openai
 trafilatura
 tiktoken
+torch
