@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: latino-rag-api
+    env: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /health/ready
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: DB_URL
+        # Render Postgres connection string, set in dashboard once created
+        fromDatabase:
+          name: rag-postgres
+          property: connectionString
+      - key: DEFAULT_INDEX_NAME
+        value: c300o45
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: QUERY_BUDGET_S
+        value: "8"
+  - type: web
+    name: latino-rag-ui
+    env: docker
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: API_URL
+        value: https://latino-rag-api.onrender.com  # replace with actual API URL after first deploy
+
+databases:
+  - name: rag-postgres
+    plan: starter
