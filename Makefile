@@ -8,60 +8,39 @@ logs:
 health:
 	curl -s http://localhost:8000/health/ready | jq
 
-# ===== Seeding via Python =====
-.PHONY: seed seed-c300o45 seed-c900 seed-one seed-help
+# ---- Seeding config ----
+API_URL       ?= http://localhost:8000
+CATALOG_FILE  ?= data/docs_catalog.json
+INDEX_NAME    ?= c300o45
+TOKENS        ?= 300
+OVERLAP       ?= 45
+CONCURRENCY   ?= 4
+# pass extra flags like: make seed SEED_FLAGS="--embedding_model text-embedding-3-small"
+SEED_FLAGS    ?= --resume
 
-# Defaults (override at call time: make seed INDEX_NAME=c900)
-API            ?= http://localhost:8000
-INDEX_NAME     ?= c300o45
-TOKENS         ?= 300
-OVERLAP        ?= 45
-CAT            ?= data/docs_catalog.json
-LANG_DEFAULT   ?= es
+.PHONY: seed reseed seed-c900
 
-# General seed: entire catalog with chosen index/params
 seed:
-	@echo "→ Seeding catalog: $(CAT) → index=$(INDEX_NAME) tokens=$(TOKENS) overlap=$(OVERLAP)"
+	@echo "→ Seeding catalog: $(CATALOG_FILE) → index=$(INDEX_NAME) tokens=$(TOKENS) overlap=$(OVERLAP) ($(SEED_FLAGS))"
 	python3 scripts/ingest_catalog.py \
-	  --api $(API) \
-	  --file $(CAT) \
+	  --api $(API_URL) \
+	  --file $(CATALOG_FILE) \
 	  --index_name $(INDEX_NAME) \
 	  --max_tokens $(TOKENS) \
 	  --overlap $(OVERLAP) \
-	  --lang_default $(LANG_DEFAULT)
+	  --concurrency $(CONCURRENCY) \
+	  $(SEED_FLAGS)
 
-# Convenience presets for your common variants
-seed-c300o45:
-	$(MAKE) seed INDEX_NAME=c300o45 TOKENS=300 OVERLAP=45
+# Wipe resume logs and re-run from scratch
+reseed:
+	@echo "→ Clearing resume logs for $(CATALOG_FILE)"
+	@rm -f $(CATALOG_FILE:.json=.ok.jsonl) $(CATALOG_FILE:.json=.fail.jsonl)
+	$(MAKE) seed SEED_FLAGS=""
 
+# Example alt index
 seed-c900:
 	$(MAKE) seed INDEX_NAME=c900 TOKENS=900 OVERLAP=90
 
-# Seed a single URL quickly (override URL=..., TOPIC=..., LANG=..., COUNTRY=...)
-URL      ?= https://es.wikipedia.org/wiki/Arepa
-TOPIC    ?= food
-LANG     ?= es
-COUNTRY  ?= VE
-
-seed-one:
-	@echo "→ Seeding one: $(URL) → index=$(INDEX_NAME) tokens=$(TOKENS) overlap=$(OVERLAP)"
-	python3 scripts/ingest_catalog.py \
-	  --api $(API) \
-	  --index_name $(INDEX_NAME) \
-	  --max_tokens $(TOKENS) \
-	  --overlap $(OVERLAP) \
-	  --single_url "$(URL)" \
-	  --single_lang "$(LANG)" \
-	  --single_topic "$(TOPIC)" \
-	  --single_country "$(COUNTRY)"
-
-seed-help:
-	@echo "Variables: API=$(API) INDEX_NAME=$(INDEX_NAME) TOKENS=$(TOKENS) OVERLAP=$(OVERLAP) CAT=$(CAT) LANG_DEFAULT=$(LANG_DEFAULT)"
-	@echo "Examples:"
-	@echo "  make seed                          # full catalog → c300o45"
-	@echo "  make seed INDEX_NAME=c900 TOKENS=900 OVERLAP=90"
-	@echo "  make seed-c300o45                  # preset"
-	@echo "  make seed-one URL=https://www.irs.gov/es/... TOPIC=civics COUNTRY=US"
 
 .PHONY: test
 test:
