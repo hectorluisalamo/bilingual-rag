@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import APIRouter, HTTPException, Request
-from typing import Annotated
+from typing import Annotated, List
 from pydantic import BaseModel, StringConstraints, Field, model_validator
 from api.core.config import settings
 from sqlalchemy.exc import OperationalError
@@ -61,7 +61,28 @@ class QueryOut(BaseModel):
 def normalize_query(q: str) -> str:
     q = unicodedata.normalize("NFKC", q)
     q = NORM_WS.sub(" ", q).strip()
-    return q
+    return 
+
+def _select_sentences(query: str, texts: List[str], max_sentences: int = 3) -> List[str]:
+    # Score sentences by token overlap with query
+    q_tokens = set(re.findall(r"\w+", query.lower()))
+    candidates = []
+    for t in texts:
+        for s in re.split(r"(?<=[.!?])\s+", t):
+            st = s.strip()
+            if not st:
+                continue
+            s_tokens = set(re.findall(r"\w+", st.lower()))
+            score = len(q_tokens & s_tokens)
+            candidates.append((score, st))
+    candidates.sort(reverse=True, key=lambda x: x[0])
+    out = []
+    for _, s in candidates:
+        if all(s not in o and o not in s for o in out):
+            out.append(s)
+        if len(out) >= max_sentences:
+            break
+    return out
 
 
 @router.post("", response_model=QueryOut)
@@ -132,14 +153,12 @@ async def ask(req: Request, payload: QueryIn):
         sims = prefer_entity(sims, q)
         sims = dedup_by_uri(sims)[:top_k]
         
-        if not sims:
-            # graceful empty result — still 200
-            return QueryOut(
-                route="rag",
-                answer="No tengo información suficiente con las fuentes actuales.",
-                citations=[],
-                request_id=rid
-            )
+        top_texts = [s["text"] for s in sims[:top_k]]
+        best = _select_sentences(q, top_texts, max_sentences=3)
+        if not best:
+            answer = "No tengo información suficiente con las fuentes actuales."
+        else:
+            answer = " ".join(best)
             
         # 5) Generation w/ guard against None
         try:
