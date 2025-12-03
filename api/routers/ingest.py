@@ -7,15 +7,14 @@ from api.rag.embed import embed_texts
 from api.rag.fetch import fetch_text
 from api.rag.store import upsert_document, insert_chunks
 from api.rag.retrieve import _to_pgvector_literal
-from bs4 import BeautifulSoup
 from sqlalchemy import text as sqltext
 import httpx
 
 router = APIRouter()
 
 ALLOWED_DOMAINS = {
-    "es.wikipedia.org","www.cdc.gov","www.usa.gov","www.irs.gov",
-    "www.uscis.gov","www.vote.gov","www.who.int"
+    "es.wikipedia.org", "es.m.wikipedia.org", "www.cdc.gov", "www.usa.gov", 
+    "www.irs.gov", "www.uscis.gov", "www.vote.gov", "www.who.int"
 }
 
 class IngestURL(BaseModel):
@@ -47,12 +46,17 @@ class PurgeIn(BaseModel):
 
 @router.post("/url")
 async def ingest_url(item: IngestURL):
-    fetched = await fetch_text(item.url)
-    text = BeautifulSoup(fetched, "html.parser").get_text(" ")
+    try:
+        text = await fetch_text(item.url)
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail={"code":"fetch_failed","message":str(e)})
     sentences = split_unicode(text)
     chunks = [ct for ct in chunk_by_tokens(sentences, max_tokens=item.max_tokens, overlap=item.overlap) if ct[1] > 0]
+    if not chunks and len(text) >= 600:
+        chunks = [ (text[:2000],  min(len(text[:2000].split()), item.max_tokens)) ]
+
     if not chunks:
-        raise HTTPException(status_code=422, detail="no_chunks_made")
+        raise HTTPException(status_code=422, detail={"code":"no_chunks_made","len":len(text)})
 
     embeds = await embed_texts([c for c,_ in chunks], model=item.embedding_model)
 
