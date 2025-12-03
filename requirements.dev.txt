@@ -13,3 +13,4 @@ openai
 trafilatura
 tiktoken
 torch
+transformers
