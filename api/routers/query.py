@@ -10,7 +10,7 @@ from api.rag.retrieve import search_similar, dedup_by_uri, prefer_entity
 from api.rag.rerank import rerank
 from api.rag.router import load_faq, route
 from api.routers.metrics import REQUESTS, ERRORS, LATENCY, EMB_LAT, DB_LAT
-import unicodedata, re, time, os, logging, traceback
+import asyncio, unicodedata, re, time, os, logging, traceback
 
 
 @asynccontextmanager
@@ -28,9 +28,10 @@ logger = logging.getLogger("api.query")
 FAQ = None
 NORM_WS = re.compile(r"\s+")
 VALID_TOPICS = {"food","culture","health","civics","education"}
+QUERY_TIMEOUT_SEC = int(os.getenv("QUERY_TIMEOUT_SEC", "8"))
 
 
-class QueryIn(BaseModel):
+class Query(BaseModel):
     query: Annotated[str, StringConstraints(min_length=2, max_length=512)]
     k: int = Field(5, ge=1, le=8)
     lang_pref: list[str] = ["en", "es"]
@@ -92,7 +93,7 @@ def _select_sentences(query: str, texts: List[str], max_sentences: int = 3) -> L
 
 @router.post("")
 @router.post("/")
-async def ask(req: Request, payload: QueryIn):
+async def ask(req: Request, payload: Query):
     rid = getattr(req.state, "request_id", "na")
     q = normalize_query(payload.query)
     index_name = payload.index_name or os.getenv("DEFAULT_INDEX_NAME", "c300o45")
@@ -103,18 +104,19 @@ async def ask(req: Request, payload: QueryIn):
     logger.info("req start id=%s q=%r k=%s lang=%s rerank=%s index=%s",
             rid, q, payload.k, lang, payload.use_reranker, index_name)
     
-    # Test mode for CI
-    if os.getenv("TEST_MODE") == "1":
-        return {
-            "route": "test_stub",
-            "answer": f"Echo: {q}",
-            "citations": [],
-            "request_id": rid
-        }
+    async def _query_task():
     
-    t0 = time.time()     
-    try:
-       # Embed
+        # Test mode for CI
+        if os.getenv("TEST_MODE") == "1":
+            return {
+                "route": "test_stub",
+                "answer": f"Echo: {q}",
+                "citations": [],
+                "request_id": rid
+            }
+    
+        t0 = time.time()     
+        # Embed
         e0 = time.time()
         embs = await embed_texts([q])
         EMB_LAT.observe((time.time() - e0) * 1000)
@@ -195,18 +197,15 @@ async def ask(req: Request, payload: QueryIn):
         REQUESTS.labels(route="rag", index=index_name, topic=str(payload.topic_hint), lang=lang).inc()
     
         return {"route": "rag", "answer": answer, "citations": cites, "request_id": rid}
-    
-    except Exception as e:
-        # Log rich context; return schema-conformant error
-        logger.exception("query_failed id=%s etype=%s sims_len=%s", rid, type(e).__name__, len(sims or []))
-        return {
-            "route": "error",
-            "answer": "",
-            "citations": [],
-            "request_id": rid,
-            "error": {"code": "internal_error", "type": type(e).__name__}
-        }
         
+    try:
+        result = await asyncio.wait_for(_query_task(), timeout=QUERY_TIMEOUT_SEC)
+        return result
+    except asyncio.TimeoutError:
+        logger.warning("query_timeout id=%s budget=%ss", rid, QUERY_TIMEOUT_SEC)
+        # Still return schema-shape so UI doesn’t crash
+        return {"route":"timeout","answer":"","citations":[],"request_id":rid,"error":{"code":"timeout"}}
+    
 @router.post("/echo")
-async def echo(payload: QueryIn):
+async def echo(payload: Query):
     return {"ok": True, "received": payload.model_dump()}
