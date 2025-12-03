@@ -63,20 +63,21 @@ def normalize_query(q: str) -> str:
     q = NORM_WS.sub(" ", q).strip()
     return 
 
-def _select_sentences(query: str, texts: List[str], max_sentences: int = 3) -> List[str]:
-    # Score sentences by token overlap with query
-    q_tokens = set(re.findall(r"\w+", query.lower()))
-    candidates = []
+def _select_sentences(query: str, texts: list[str], max_sentences: int = 3) -> list[str]:
+    q_tokens = set(re.findall(r"\w+", (query or "").lower()))
+    candidates: list[tuple[int,str]] = []
     for t in texts:
+        if not isinstance(t, str):
+            continue
         for s in re.split(r"(?<=[.!?])\s+", t):
-            st = s.strip()
+            st = (s or "").strip()
             if not st:
                 continue
             s_tokens = set(re.findall(r"\w+", st.lower()))
             score = len(q_tokens & s_tokens)
             candidates.append((score, st))
     candidates.sort(reverse=True, key=lambda x: x[0])
-    out = []
+    out: list[str] = []
     for _, s in candidates:
         if all(s not in o and o not in s for o in out):
             out.append(s)
@@ -145,20 +146,28 @@ async def ask(req: Request, payload: QueryIn):
         
         # 4) Rerank / slice
         if payload.use_reranker and sims:
-            sims = rerank(q, sims, top_k=top_k)
+            # ensure each item has a string to rank
+            sims = [s for s in sims if isinstance((s.get("text","") if isinstance(s, dict) else getattr(s,"text","")), str)]
+            sims = rerank(q, sims, top_k)
         else:
-            sims = sims[:top_k]
+            sims = sims[top_k]
             
         sims = [s for s in sims if (s.get("score") or 0) >= 0.35]
         sims = prefer_entity(sims, q)
         sims = dedup_by_uri(sims)[:top_k]
         
-        top_texts = [s["text"] for s in sims[:top_k]]
+        top_texts = []
+        for s in sims[:top_k]:
+            txt = s.get("text") if isinstance(s, dict) else getattr(s, "text", None)
+            if not isinstance(txt, str) or not txt.strip():
+                txt = (s.get("snippet") if isinstance(s, dict) else getattr(s, "snippet", None)) or ""
+            top_texts.append(txt)
+
         best = _select_sentences(q, top_texts, max_sentences=3)
-        if not best:
-            answer = "No tengo información suficiente con las fuentes actuales."
+        if best:
+            answer = " ".join(best) + " " + " ".join(f"[{i+1}]" for i in range(min(len(sims), top_k)))
         else:
-            answer = " ".join(best)
+            answer = "No tengo información suficiente con las fuentes actuales."
             
         # 5) Generation w/ guard against None
         try:
