@@ -10,7 +10,7 @@ from api.rag.retrieve import search_similar, dedup_by_uri, prefer_entity
 from api.rag.rerank import rerank
 from api.rag.router import load_faq, route
 from api.routers.metrics import REQUESTS, ERRORS, LATENCY, EMB_LAT, DB_LAT
-import unicodedata, re, asyncio, structlog, time, os
+import unicodedata, re, time, os, logging, traceback
 
 
 @asynccontextmanager
@@ -24,7 +24,7 @@ async def lifespan(app: APIRouter):
     
 
 router = APIRouter(lifespan=lifespan)
-log = structlog.get_logger(__name__)
+logger = logging.getLogger("api.query")
 FAQ = None
 NORM_WS = re.compile(r"\s+")
 VALID_TOPICS = {"food","culture","health","civics","education"}
@@ -106,6 +106,12 @@ def _select_sentences(query: str, texts: List[str], max_sentences: int = 3) -> L
 @router.post("/")
 async def ask(req: Request, payload: QueryIn):
     rid = getattr(req.state, "request_id", "na")
+    q = normalize_query(payload.query)
+    index_name = payload.index_name or os.getenv("DEFAULT_INDEX_NAME", "c300o45")
+    top_k = max(payload.k, 8)
+    lang = payload.lang_pref or "es"
+    logger.info("req start id=%s q=%r k=%s lang=%s rerank=%s index=%s",
+            rid, q, top_k, lang, payload.use_reranker, index_name)
     
     # --- TEST MODE ---
     if os.getenv("TEST_MODE") == "1":
@@ -116,21 +122,12 @@ async def ask(req: Request, payload: QueryIn):
             "request_id": rid
         }
         
-    q = normalize_query(payload.query)
-    t0 = time.time()
-    
-    # Normalize langs; guard empty
-    langs = [s.lower().strip() for s in (payload.lang_pref or []) if s]
-    if not langs:
-        langs = ["es", "en"]
-    
-    index_name = payload.index_name or os.getenv("DEFAULT_INDEX_NAME", "c300o45")
-    
+    t0 = time.time()  
     try:
         # FAQ short-circuit
         rtype, _ = route(q, FAQ)
         if rtype == "faq":
-            REQUESTS.labels(route="faq", index=index_name, topic=str(payload.topic_hint), langs=",".join(langs)).inc()
+            REQUESTS.labels(route="faq", index=index_name, topic=str(payload.topic_hint), lang=lang).inc()
             LATENCY.observe((time.time() - t0) * 1000)
             return QueryOut(route="faq", answer=FAQ[q.lower()], citations=[], request_id=rid)
    
@@ -138,40 +135,55 @@ async def ask(req: Request, payload: QueryIn):
         e0 = time.time()
         embs = await embed_texts([q])
         EMB_LAT.observe((time.time() - e0) * 1000)
-        
         qvec = embs[0]
+        logger.debug("embed ok id=%s dim=%s", rid, len(qvec) if embs and qvec else None)
+
             
         # Retrieve
-        top_k = max(payload.k, 8)
         s0 = time.time()
         sims = search_similar(
             qvec,
             k=top_k,
-            lang_filter=tuple(langs),
+            lang_filter=lang,
             topic=payload.topic_hint,
             country=payload.country_hint,
             index_name=index_name
         )
+        logger.debug("retrieved=%d id=%s", len(sims or []), rid)
+        if sims:
+            first = sims[0]
+            if isinstance(first, dict):
+                logger.debug("sims0: dict keys=%s id=%s", list(first.keys()), rid)
+            else:
+                logger.debug("sims0: type=%s has_text=%s id=%s", type(first).__name__, hasattr(first, "text"), rid)
 
         # Fallback if empty
         if not sims:
             sims = search_similar(
                 qvec,
                 k=top_k,
-                lang_filter=tuple(langs),
+                lang_filter=lang,
                 topic=None,
                 country=payload.country_hint,
                 index_name=index_name
             )
         DB_LAT.observe((time.time() - s0) * 1000)
+        logger.debug("pre-rerank n=%d id=%s", len(sims or []), rid)
         
         # Guarded reranker
+        sims = [s for s in (sims or []) if _as_text(s)]
+        sims = dedup_by_uri(sims)
+        sims = prefer_entity(q, sims)
+        logger.debug("post-filter n=%d id=%s", len(sims), rid)
+
         if payload.use_reranker and sims:
+            logger.debug("rerank start id=%s", rid)
             # Ensure each item has a string to rank
-            sims = [s for s in sims if _as_text(s)]
             sims = rerank(q, sims, top_k=top_k)
+            logger.debug("rerank done n=%d id=%s", len(sims), rid)
+
         else:
-            sims = sims[: top_k]
+            sims = sims[:top_k]
             
         # Build citations safely
         cites = []
@@ -199,29 +211,36 @@ async def ask(req: Request, payload: QueryIn):
         else:
             answer = "No tengo información suficiente con las fuentes actuales."
         
-        # Logging + metrics (after success)
-        log.info(
-            "query",
-            request_id=rid, 
-            route="rag", 
-            k=top_k, 
-            index=index_name,
-            topic=payload.topic_hint, 
-            langs=langs,
-            ms=getattr(req.state, "duration_ms", int((time.time() - t0) * 1000))
-        )
+        # Metrics (after success)
         LATENCY.observe((time.time() - t0) * 1000)
-        REQUESTS.labels(route="rag", index=index_name, topic=str(payload.topic_hint), langs=",".join(langs)).inc()
+        REQUESTS.labels(route="rag", index=index_name, topic=str(payload.topic_hint), lang=lang).inc()
     
         return {route: "rag", "answer": answer, "citations": cites, "request_id": rid}
     
     except Exception as e:
-        # Structured error if not TEST_MODE
-        raise HTTPException(status_code=200, detail={
-            "code": "graceful_error",
-            "message": type(e).__name__,
-            "request_id": rid
-        })
+        # dump rich context to logs
+        ctx = {
+            "id": rid,
+            "etype": type(e).__name__,
+            "stage": "unknown",
+            "sims_len": len(sims or []),
+            "sims0_type": (type(sims[0]).__name__ if sims else None),
+        }
+        try:
+            if sims and isinstance(sims[0], dict):
+                ctx["sims0_keys"] = list(sims[0].keys())
+        except Exception:
+            pass
+        logger.error("query_failed %s\n%s", ctx, traceback.format_exc())
+
+        # Return schema-conformant response so CI/tests pass
+        return {
+            "route": "error",
+            "answer": "",
+            "citations": [],
+            "request_id": rid,
+            "error": {"code": "internal_error", "type": type(e).__name__}
+        }
         
 @router.post("/echo")
 async def echo(payload: QueryIn):
