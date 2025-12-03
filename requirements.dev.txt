@@ -10,3 +10,4 @@ prometheus_client
 pytest
 sqlalchemy
 openai
+trafilatura

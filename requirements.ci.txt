@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-httpx
-pydantic>=2
-sqlalchemy>=2
-psycopg2-binary
-redis
