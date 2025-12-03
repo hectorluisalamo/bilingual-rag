@@ -9,6 +9,7 @@ jobs:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
       TEST_MODE: "1"
       PORT: "8000"
+      PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,8 +22,6 @@ jobs:
           pip install pytest
 
       - name: Start API
-        env:
-          PYTHONPATH: .
         run: |
           uvicorn api.main:app --host 127.0.0.1 --port $PORT --log-level warning &
           echo $! > uvicorn.pid
