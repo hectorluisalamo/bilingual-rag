@@ -30,3 +30,4 @@ docker-compose.yml
 data/docs_catalog_wiki*
 data/docs_catalog.fail*
 data/docs_catalog.ok.jsonl
+.uv.pid
