@@ -1,29 +1,32 @@
 FROM python:3.11-slim
 
-WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
-
-# system deps (+ pg client)
+# System deps (+ pg client)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev curl ca-certificates postgresql-client \
+    build-essential gcc libpq-dev curl \
  && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml poetry.lock* /app/
-RUN pip install --upgrade pip && \
-    pip install "poetry==1.8.3" && \
-    poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi --only main
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
+WORKDIR /app
+
+# Install Python deps first for better caching
+COPY pyproject.toml poetry.lock* requirements.txt* /app/
+# Prefer requirements if exists, else build from pyproject
+RUN if [ -f requirements.txt ]; then \
+      pip install -r requirements.txt; \
+    else \
+      pip install "pip>=24.0" && pip install . ; \
+    fi
+
+# Copy app code
 COPY api /app/api
 COPY migrations /app/migrations
 
-ENV HOST=0.0.0.0 PORT=8000 DEFAULT_INDEX_NAME=c300o45
-
-CMD bash -c '\
-  until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; do echo "waiting for db"; sleep 2; done && \
-  psql "postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE" -f /app/migrations/001_init.sql && \
-  [ -f /app/migrations/002_index_name.sql ] && psql "postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE" -f /app/migrations/002_index_name.sql || true && \
-  [ -f /app/migrations/003_ivf_lists_200.sql ] && psql "postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE" -f /app/migrations/003_ivf_lists_200.sql || true && \
-  [ -f /app/migrations/004_retention.sql ] && psql "postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE" -f /app/migrations/004_retention.sql || true && \
-  uvicorn api.main:app --host "$HOST" --port "$PORT" \
-'
+# Expose and run Uvicorn (Render provides $PORT)
+ENV PORT=8000 \
+    LOG_LEVEL=INFO \
+    DEFAULT_INDEX_NAME=c300o45 \
+    QUERY_TIMEOUT_SEC=8
+CMD uvicorn api.main:app --host 0.0.0.0 --port ${PORT}
