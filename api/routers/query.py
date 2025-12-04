@@ -4,11 +4,9 @@ from typing import Annotated, List, Mapping, Optional
 from pydantic import BaseModel, StringConstraints, Field, model_validator
 from api.core.config import settings
 from api.rag.embed import embed_texts
-from api.rag.generate import quote_then_summarize, rule_based_definition
-from api.rag.retrieve import search_similar, dedup_by_uri, prefer_entity
-from api.rag.rerank import rerank
+from api.rag.retrieve import search_similar
 from api.rag.router import load_faq
-from api.routers.metrics import REQUESTS, ERRORS, LATENCY, EMB_LAT, DB_LAT
+from api.routers.metrics import REQUESTS, LATENCY, EMB_LAT, DB_LAT
 import asyncio, unicodedata, re, time, os, logging, uuid
 
 
@@ -157,9 +155,11 @@ async def ask(payload: Query):
             sims = [s for s in (sims or []) if _as_text(s)]
             Q_LOGGER.debug("post-filter=%d id=%s", len(sims), rid)
 
-            if payload.use_reranker and sims:
+            use_reranker = bool(payload.use_reranker) and os.getenv("RERANK_ENABLED", "0") in ("1","true","True")
+            if use_reranker and sims:
                 Q_LOGGER.debug("rerank start id=%s", rid)
                 # Ensure each item has a string to rank
+                from api.rag.rerank import rerank
                 sims = rerank(q, sims, top_k=payload.k)
                 Q_LOGGER.debug("rerank done n=%d id=%s", len(sims), rid)
             else:
