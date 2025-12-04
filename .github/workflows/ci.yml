@@ -37,7 +37,7 @@ jobs:
       - name: Install Python deps
         run: |
           python -m pip install -U pip
-          pip install -r requirements-ci.txt
+          pip install -r requirements.dev.txt
           pip install pytest
 
       - name: Wait for DB & set up schema
