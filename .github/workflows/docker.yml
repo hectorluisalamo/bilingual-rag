@@ -39,7 +39,7 @@ jobs:
       - name: Build & push UI
         uses: docker/build-push-action@v6
         with:
-          context: ./ui
+          context: .
           file: ./ui/Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository }}/ui:latest
