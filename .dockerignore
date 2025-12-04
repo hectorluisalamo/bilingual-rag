@@ -1,0 +1,12 @@
+.git/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+.pytest_cache/
+.env
+ui/node_modules/
+ui/.streamlit/
+data/
+*.log
