@@ -13,12 +13,7 @@ WORKDIR /app
 
 # Install Python deps first for better caching
 COPY pyproject.toml poetry.lock* requirements.txt* /app/
-# Prefer requirements if exists, else build from pyproject
-RUN if [ -f requirements.txt ]; then \
-      pip install -r requirements.txt; \
-    else \
-      pip install "pip>=24.0" && pip install . ; \
-    fi
+RUN pip install -r requirements.txt
 
 # Copy app code
 COPY api /app/api
