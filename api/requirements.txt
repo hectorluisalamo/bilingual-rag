@@ -30,6 +30,4 @@ tenacity==8.5.0            # retries for outbound calls
 
 # --- Cloud embeddings / reranker ---
 openai==1.52.2
-
-# --- Dev / Observability ---
-loguru==0.7.2
+torch==2.4.1
