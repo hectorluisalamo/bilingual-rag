@@ -17,13 +17,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install requirements if provided, else default dependencies
-COPY api/requirements.txt /app/api-requirements.txt
-RUN if [ -f /app/requirements.txt ]; then \
-        pip install -r /app/requirements.txt ; \
-    else \
-        pip install fastapi "uvicorn[standard]" httpx pydantic sqlalchemy psycopg2-binary \
-                    pgvector python-dotenv ; \
-    fi
+COPY api/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy application code
 COPY api /app/api
