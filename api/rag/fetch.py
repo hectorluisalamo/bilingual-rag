@@ -1,11 +1,9 @@
 import httpx, urllib
 from bs4 import BeautifulSoup
-import redis
 from api.core.config import settings
 
 UA = settings.ua
 
-_rds = redis.from_url(settings.redis_url) if getattr(settings, "redis_url", None) else None
 TIMEOUT = httpx.Timeout(settings.http_timeout_s, read=settings.tout_read, connect=settings.tout_connect)
 
 async def fetch_text(url: str) -> str:
