@@ -1,13 +1,14 @@
 from contextlib import asynccontextmanager
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from typing import Annotated, List, Mapping, Optional
 from pydantic import BaseModel, StringConstraints, Field, model_validator
 from api.core.config import settings
 from api.rag.embed import embed_texts
 from api.rag.retrieve import search_similar
 from api.rag.router import load_faq
+from api.rag.generate import quote_then_summarize
 from api.routers.metrics import REQUESTS, LATENCY, EMB_LAT, DB_LAT
-import asyncio, unicodedata, re, time, os, logging, uuid
+import asyncio, unicodedata, re, time, os, logging
 
 
 @asynccontextmanager
@@ -32,7 +33,7 @@ class Query(BaseModel):
     query: Annotated[str, StringConstraints(min_length=2, max_length=512)]
     k: int = Field(5, ge=1, le=8)
     lang_pref: list[str] = ["en", "es"]
-    use_reranker: bool = True
+    use_reranker: bool = False
     topic_hint: Optional[str] = None
     country_hint: Optional[str] = None
     index_name: Optional[str] = None
@@ -90,8 +91,8 @@ def _select_sentences(query: str, texts: List[str], max_sentences: int = 3) -> L
 
 @router.post("")
 @router.post("/")
-async def ask(payload: Query):
-    rid = str(uuid.uuid4())
+async def ask(payload: Query, request: Request):
+    rid = getattr(request.state, "request_id", "na")
     q = normalize_query(payload.query)
     index_name = payload.index_name or os.getenv("DEFAULT_INDEX_NAME", "c300o45")
     lang = payload.lang_pref
@@ -119,6 +120,9 @@ async def ask(payload: Query):
             EMB_LAT.observe((time.time() - e0) * 1000)
             qvec = embs[0]
             Q_LOGGER.debug("embed ok id=%s dim=%s", rid, len(qvec) if embs and qvec else None)
+   
+            env_gate = os.getenv("RERANK_ENABLED", "0") in ("1","true","True")
+            use_reranker = bool(payload.use_reranker) and env_gate
    
             # Retrieve
             s0 = time.time()
@@ -155,13 +159,15 @@ async def ask(payload: Query):
             sims = [s for s in (sims or []) if _as_text(s)]
             Q_LOGGER.debug("post-filter=%d id=%s", len(sims), rid)
 
-            use_reranker = bool(payload.use_reranker) and os.getenv("RERANK_ENABLED", "0") in ("1","true","True")
             if use_reranker and sims:
-                Q_LOGGER.debug("rerank start id=%s", rid)
-                # Ensure each item has a string to rank
-                from api.rag.rerank import rerank
-                sims = rerank(q, sims, top_k=payload.k)
-                Q_LOGGER.debug("rerank done n=%d id=%s", len(sims), rid)
+                try:
+                    from api.rag.rerank import rerank
+                    Q_LOGGER.debug("rerank start id=%s", rid)
+                    # Ensure each item has a string to rank
+                    sims = rerank(q, sims, top_k=payload.k)
+                    Q_LOGGER.debug("rerank done n=%d id=%s", len(sims), rid)
+                except Exception:
+                    sims = sims[: payload.k]
             else:
                 sims = sims[: payload.k]
             
@@ -183,11 +189,9 @@ async def ask(payload: Query):
                     })
 
             # Extractive answer (never raises)
-            top_texts = [_as_text(s) for s in sims]
-            sentences = _select_sentences(q, top_texts, max_sentences=3)
-            if sentences:
-                answer = (" ".join(sentences) + " " + " ".join(f"[{i+1}]" for i in range(len(cites))))
-            else:
+            try:
+                answer = await quote_then_summarize(q, sims)
+            except Exception:
                 answer = "No tengo información suficiente con las fuentes actuales."
         
             # Metrics (after success)
