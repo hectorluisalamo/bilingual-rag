@@ -1,122 +1,114 @@
-import os, time, json, textwrap, httpx
+import os, time, httpx, json
 import streamlit as st
 
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
-def post_query(query: str, *, k: int = 5, lang_pref: list[str], use_reranker: bool,
-               topic_hint: str, index_name: str | None):
+# --- Clear session state ---
+if st.session_state.get("_do_clear"):
+    # Delete widget-backed keys BEFORE creating widgets
+    for key in ["query_text", "lang_pref", "topk", "use_reranker", "topic", "index_name"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    st.session_state.pop("_do_clear", None)
+    st.session_state.pop("last_response", None)
+    st.session_state.pop("last_payload", None)
+    st.rerun()
+
+def post_query(query: str, *, index_name: str, lang_pref: list[str], k: int,
+               use_reranker: bool, topic_hint: str | None):
     payload = {
-        "query": query,
+        "query": (query or "").strip(),
         "k": int(k),
-        "lang_pref": lang_pref or ["es", "en"],
+        "lang_pref": lang_pref or ["es","en"],
         "use_reranker": bool(use_reranker),
-        "topic_hint": topic_hint,
-        "index_name": index_name,
+        "topic_hint": topic_hint or None,
+        "index_name": index_name or None,
     }
     t0 = time.time()
-    timeout = httpx.Timeout(connect=5.0, read=15.0, write=10.0, pool=10.0)
+    timeout = httpx.Timeout(15.0, connect=5.0, read=15.0, write=5.0)
+    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        r = client.post(f"{API_URL}/query/", json=payload)
+    return r, int((time.time() - t0) * 1000), payload
 
-    for attempt in range(2):  # tiny retry
-        try:
-            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-                r = client.post(f"{API_URL}/query/", json=payload)
-            r.raise_for_status()
-            dt_ms = int((time.time() - t0) * 1000)
-            return r, dt_ms, payload
-        except (httpx.ReadTimeout, httpx.ConnectError) as e:
-            if attempt == 0:
-                continue
-            raise
-        except httpx.HTTPStatusError as e:
-            # still return response for UI to show payload
-            return e.response, int((time.time() - t0) * 1000), payload
-
-st.set_page_config(page_title="Latino RAG", page_icon="🫓", layout="centered")
-
-# --- Sidebar controls ---
-st.sidebar.title("Latino RAG - Demo")
-ui_lang = st.sidebar.selectbox("UI language / Idioma de la UI", ["es", "en"], index=0, key="ui_lang")
-index_name = st.sidebar.text_input("Index name", os.getenv("DEFAULT_INDEX_NAME", "c300o45"), key="index_name")
-topic = st.sidebar.selectbox(
-    "Topic / Tema", ["", "food", "culture", "health", "civics", "education"], index=1, key="topic"
+# --- Sidebar ---
+ui_lang = st.sidebar.selectbox("UI language / Idioma de la UI", ["es","en"], index=0, key="ui_lang")
+index_name = st.sidebar.text_input(
+    "Index name", value=os.getenv("DEFAULT_INDEX_NAME","c300o45"), key="index_name"
 )
-lang_pref = st.sidebar.multiselect("Language preference", ["es", "en"], default=["es"], key="lang_pref")
-k = st.sidebar.slider("Top-K", min_value=1, max_value=8, value=5, step=1, key="topk")
+topic = st.sidebar.selectbox("Topic / Tema", ["", "food", "culture", "gov", "health", "education"], index=1, key="topic")
+lang_pref = st.sidebar.multiselect("Language preference", options=["es","en"], default=["es"], key="lang_pref")
+k = st.sidebar.slider("Top-K", 1, 8, 5, key="topk")
 use_reranker = st.sidebar.checkbox("Use reranker", value=False, key="use_reranker")
-st.sidebar.caption("Reranker improves precision; adds ~20-40ms.")
+st.sidebar.caption("Reranker improves precision; adds ~20–40ms when enabled.")
 
+# --- Main ---
 st.title("Latino RAG Chatbot")
 st.caption("Bilingual retrieval-augmented generation with citations.")
 
-q_label = "Pregunta" if ui_lang=="es" else "Question"
-query = st.text_area(q_label, "¿Qué es una arepa?", height=90, max_chars=512, key="query")
+query = st.text_area("Pregunta" if ui_lang=="es" else "Question", max_chars=512, key="query_text")
 
 col_search, col_clear = st.columns([1,1])
+
 with col_search:
-    go = st.button("Buscar" if ui_lang=="es" else "Search", type="primary")
-if go:
-    if not query.strip():
-        st.warning("Escribe una pregunta." if ui_lang=="es" else "Type a question.")
-    else:
+    if st.button("Buscar" if ui_lang=="es" else "Search", type="primary"):
         r, dt_ms, payload = post_query(
             query,
-            k=k,
+            index_name=index_name,
             lang_pref=lang_pref,
+            k=k,
             use_reranker=use_reranker,
             topic_hint=(topic or None),
-            index_name=index_name,
         )
-        try:
-            data = r.json()
-        except Exception:
-            st.error(f"Bad response ({r.status_code}).")
-            st.code(r.text)
-            st.stop()
-
-        if r.status_code != 200:
-            st.error(f"Error {r.status_code}: {data}")
-            st.stop()
-
         st.session_state["last_response"] = (r.status_code, dt_ms, r.text)
         st.session_state["last_payload"] = payload
-        
+
 with col_clear:
-    clear = st.button("Limpiar" if ui_lang=="es" else "Clear")
-if clear:
-        # Full reset of relevant session keys
-        for key in ["query_text","last_response","last_payload"]:
-            st.session_state.pop(key, None)
-        # Reset sidebar toggles
-        st.session_state.update({
-            "lang_pref": ["es"],
-            "topk": 5,
-            "use_reranker": False,
-            "topic": "",
-        })
-        st.experimental_rerun()
-        
-# --- Results ---
+    if st.button("Limpiar" if ui_lang=="es" else "Clear"):
+        # Mark for clearing and rerun; pre-widget block will handle deletion
+        st.session_state["_do_clear"] = True
+        st.rerun()
+
+# --- Display response ---
+st.subheader("Answer / Respuesta")
 if "last_response" in st.session_state:
     status, dt_ms, body = st.session_state["last_response"]
+    try:
+        data = json.loads(body)
+    except Exception:
+        data = None
 
-    st.subheader("Answer / Respuesta")
-    st.write(data.get("answer", "No answer returned."))
-    st.caption(body if status != 200 else "")
+    if status == 200 and isinstance(data, dict):
+        answer = (data.get("answer") or "").strip()
+        if answer:
+            st.write(answer)
+        else:
+            st.info("No answer returned.")
 
-    st.subheader("Citations / Citas")
-    cits = data.get("citations", [])
-    if not cits:
-        st.info("No citations returned.")
+        # Citations
+        st.subheader("Citations / Citas")
+        cites = data.get("citations") or []
+        if cites:
+            for i, c in enumerate(cites, 1):
+                uri = c.get("uri") or c.get("source_uri") or ""
+                snip = (c.get("snippet") or "").strip()
+                dt = c.get("date")
+                score = c.get("score")
+                st.markdown(f"**[{i}]** {snip}\n\n`{uri}` · {dt} · score={score}")
+        else:
+            st.info("No citations returned.")
+
+        # Footer / debug
+        route = data.get("route")
+        index = data.get("index") or (st.session_state.get("index_name") or "n/a")
+        rerank = data.get("reranker")
+        st.caption(f"route={route} · index={index} · reranker={rerank} · k={st.session_state.get('topk')} · {dt_ms} ms")
+        st.subheader("Reproduce (cURL)")
+        st.code(
+            f"curl -s -X POST {API_URL}/query/ -H 'Content-Type: application/json' "
+            f"-d '{json.dumps(st.session_state.get('last_payload') or {}, ensure_ascii=False)}'",
+            language="bash",
+        )
     else:
-        for i, c in enumerate(cits, 1):
-            with st.expander(f"[{i}] {c['uri']}"):
-                st.write(c.get("snippet",""))
-                meta = []
-                if c.get("date"): meta.append(f"date={c['date']}")
-                if c.get("score") is not None: meta.append(f"score={round(c['score'],3)}")
-                if meta: st.caption(" · ".join(meta))
-                st.code(c["uri"])
-
-    st.subheader("Reproduce (cURL)")
-    curl = f"""curl -s -X POST {API_URL}/query/ -H "Content-Type: application/json" -d '{json.dumps(payload, ensure_ascii=False)}' | jq"""
-    st.code(textwrap.dedent(curl))
+        # Non-200 or non-JSON: show raw body
+        st.error(f"HTTP {status}")
+        st.code(body, language="json")
