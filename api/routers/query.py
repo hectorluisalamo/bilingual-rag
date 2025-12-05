@@ -113,6 +113,15 @@ async def ask(payload: Query, request: Request):
             rid, q, payload.k, lang, payload.use_reranker, index_name)
         
         try:
+            # Try FAQ routing first
+            try:
+                routed = FAQ.route(q, lang) if FAQ else None
+            except Exception:
+                routed = None
+            if routed:
+                REQUESTS.labels(route="faq", index=index_name, topic=str(payload.topic_hint), lang=lang).inc()
+                return {**routed, "request_id": rid}
+            
             t0 = time.time()     
             # Embed
             e0 = time.time()
