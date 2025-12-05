@@ -37,4 +37,4 @@ def configure_logging(db_url_for_log: str | None = None):
         logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
         logging.getLogger("sqlalchemy.pool").setLevel(logging.INFO)
     if db_url_for_log:
-        root.info("startup db", extra={"msg": f"DB={sanitize_db_url(db_url_for_log)}"})
+        root.info("startup db", sanitize_db_url(db_url_for_log))

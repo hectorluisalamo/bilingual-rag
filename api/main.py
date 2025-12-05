@@ -3,17 +3,17 @@ from api.core.logging import configure_logging
 from api.core.db import engine, run_startup_migrations
 from fastapi import FastAPI
 from sqlalchemy import text
+from api.core.db import coalesce_db_url
 from api.core.errors import json_error, EnforceJSONMiddleware
 from api.routers import ingest, query, health, metrics
-import os, logging
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     run_startup_migrations()
     yield
 
-configure_logging(os.getenv("DATABASE_URL"))
-log = logging.getLogger("api.main")
+db_url = coalesce_db_url()
+configure_logging(db_url)
 
 app = FastAPI(lifespan=lifespan)
 
