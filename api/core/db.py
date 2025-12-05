@@ -1,4 +1,3 @@
-# api/core/db.py
 from sqlalchemy import create_engine
 import os, glob, logging, re
 
@@ -11,7 +10,7 @@ def _normalize_sqlalchemy_url(url: str) -> str:
         return url.replace("postgres://", "postgresql+psycopg2://", 1)
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+psycopg2://", 1)
-    return url  # assume already has +psycopg2 or other driver
+    return url
 
 def coalesce_db_url() -> str:
     for key in ("DB_URL", "DATABASE_URL", "POSTGRES_URL", "PG_CONNECTION_STRING"):
@@ -21,7 +20,7 @@ def coalesce_db_url() -> str:
     return ""
 
 def _mask(url: str) -> str:
-    # hide password between ':' and '@'
+    # Hide password between ':' and '@'
     return re.sub(r":[^@]+@", ":***@", url or "")
 
 db_url = coalesce_db_url()

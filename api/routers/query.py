@@ -93,7 +93,7 @@ def _select_sentences(query: str, texts: List[str], max_sentences: int = 3) -> L
 @router.post("/")
 async def ask(payload: Query, request: Request):
     rid = getattr(request.state, "request_id", "na")
-    q = normalize_query(payload.query)
+    q = normalize_query(payload.query) or (payload.query or "").strip()
     index_name = payload.index_name or os.getenv("DEFAULT_INDEX_NAME", "c300o45")
     lang = payload.lang_pref
     cites: List[dict] = []
@@ -130,7 +130,7 @@ async def ask(payload: Query, request: Request):
             qvec = embs[0]
             log.debug("embed ok id=%s dim=%s", rid, len(qvec) if embs and qvec else None)
    
-            env_gate = os.getenv("RERANK_ENABLED", "0") in ("1","true","True")
+            env_gate = os.getenv("RERANK_ENABLED", "0") in ("1", "true", "True")
             use_reranker = bool(payload.use_reranker) and env_gate
    
             # Retrieve
