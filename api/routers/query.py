@@ -48,7 +48,7 @@ class Query(BaseModel):
 def normalize_query(q: str) -> str:
     q = unicodedata.normalize("NFKC", q)
     q = NORM_WS.sub(" ", q).strip()
-    return 
+    return q
 
 
 def _as_text(x) -> str:
@@ -192,7 +192,12 @@ async def ask(payload: Query, request: Request):
             try:
                 answer = await quote_then_summarize(q, sims)
             except Exception:
-                answer = "No tengo información suficiente con las fuentes actuales."
+                answer = ""
+            
+            if not isinstance(answer, str) or not answer.strip():
+                # Fallback: rule-based answer
+                from api.rag.generate import rule_based_definition
+                answer = rule_based_definition(q, sims)
         
             # Metrics (after success)
             LATENCY.observe((time.time() - t0) * 1000)
