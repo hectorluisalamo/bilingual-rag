@@ -1,8 +1,15 @@
-import json, re, os
-from typing import List, Dict, Optional
+import json, re, os, unicodedata
+from typing import List, Dict, Optional, Tuple
 from rapidfuzz import process, fuzz
 
 INJECTION = re.compile(r"ignore previous|system prompt|do anything now", re.I)
+
+def _strip_accents(s: str) -> str:
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return unicodedata.normalize("NFKC", s)
 
 class FAQRouter:
     def __init__(self, path: Optional[str]):
@@ -16,11 +23,12 @@ class FAQRouter:
                         continue
                     obj = json.loads(line)
                     self.items.append(obj)
-                    self.norm_to_idx[self._norm(obj.get("q",""))] = len(self.items)-1
+                    qn = self._norm(obj.get("q",""))
+                    if qn:
+                        self.norm_to_idx[qn] = len(self.items) - 1
 
     def _norm(self, s: str) -> str:
-        s = s or ""
-        s = s.strip().lower()
+        s = _strip_accents(s or "").lower().strip()
         s = re.sub(r"\s+", " ", s)
         return s
 
@@ -30,20 +38,35 @@ class FAQRouter:
         if not self.items:
             return None
         qn = self._norm(query)
-        # Exact/canonical match
+        # Exact match on normalized query
         if qn in self.norm_to_idx:
             it = self.items[self.norm_to_idx[qn]]
             if not lang_pref or it.get("lang") in lang_pref:
-                return {"route":"faq","answer":it.get("a",""),"citations":[{"uri":it.get("uri",""),"snippet":it.get("a","")}]}
-        # Fuzzy top-1 within language preference
-        choices = [(i, it["q"]) for i,it in enumerate(self.items) if not lang_pref or it.get("lang") in lang_pref]
+                return {
+                    "route": "faq",
+                    "answer": it.get("a", ""),
+                    "citations": [{"uri": it.get("uri", ""), "snippet": it.get("a", "")}]
+                }
+                
+        # Fuzzy match within language preference
+        choices: List[Tuple[int, str]] = []
+        for i, it in enumerate(self.items):
+           if lang_pref and it.get("lang") not in lang_pref:
+               continue
+           choices.append((i, self._norm(it.get("q", ""))))
+        
         if not choices:
             return None
+        
         idxs, texts = zip(*choices)
         best = process.extractOne(qn, texts, scorer=fuzz.token_sort_ratio)
-        if best and best[1] >= 90:
+        if best and best[1] >= 85:
             it = self.items[idxs[best[2]]]
-            return {"route":"faq","answer":it.get("a",""),"citations":[{"uri":it.get("uri",""),"snippet":it.get("a","")}]}
+            return {
+                "route": "faq",
+                "answer": it.get("a", ""),
+                "citations": [{"uri": it.get("uri", ""), "snippet": it.get("a", "")}]
+            }
         return None
 
 def load_faq(path: Optional[str]) -> FAQRouter:

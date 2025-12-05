@@ -21,10 +21,10 @@ async def lifespan(app: APIRouter):
     faq_path = os.getenv("FAQ_PATH")
     try:
         FAQ = load_faq(faq_path)
-        log.info("faq_loaded", extra={"msg": f"path={faq_path!r} size={len(FAQ)}"})
+        log.info("faq_loaded", extra={"event": "faq_loaded", "detail": f"path={faq_path!r} size={getattr(FAQ,'items',[]) and len(FAQ.items) or 0}"})
     except Exception as e:
         FAQ = {}
-        log.warning("faq_load_failed", extra={"msg": f"path={faq_path!r} err={type(e).__name__}"})
+        log.warning("faq_load_failed", extra={"event": "faq_load_failed", "detail": f"path={faq_path!r} err={type(e).__name__}"})
     yield
     
 router = APIRouter(lifespan=lifespan)
