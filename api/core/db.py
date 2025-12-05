@@ -1,13 +1,38 @@
 # api/core/db.py
 from sqlalchemy import create_engine
-import os, glob, logging
+import os, glob, logging, re
 
 log = logging.getLogger("api.db")
 
-DB = os.getenv("DB_URL", "")
+def _normalize_sqlalchemy_url(url: str) -> str:
+    if not url:
+        return url
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url  # assume already has +psycopg2 or other driver
+
+def _coalesce_db_url() -> str:
+    for key in ("DB_URL", "DATABASE_URL", "POSTGRES_URL", "PG_CONNECTION_STRING"):
+        val = os.getenv(key, "").strip()
+        if val:
+            return _normalize_sqlalchemy_url(val)
+    return ""
+
+def _mask(url: str) -> str:
+    # hide password between ':' and '@'
+    return re.sub(r":[^@]+@", ":***@", url or "")
+
+db_url = _coalesce_db_url()
+if not db_url:
+    raise RuntimeError(
+        "No DB URL found. Set DATABASE_URL in the service env. "
+        "On Render, use Environment → From Database to inject DATABASE_URL."
+    )
 
 engine = create_engine(
-    DB,
+    _coalesce_db_url(),
     pool_pre_ping=True,         # drops dead connections
     pool_recycle=300,           # avoid stale sockets
     pool_size=int(os.getenv("DB_POOL_SIZE") or 5),

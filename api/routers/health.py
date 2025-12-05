@@ -43,7 +43,7 @@ async def embeddings_probe():
     
 @router.get("/env")
 def env():
-    db = os.getenv("DB_URL", "")
+    db = os.getenv("DATABASE_URL", "")
     idx = os.getenv("DEFAULT_INDEX_NAME", "c300o45")
     return {"db_url": db, "default_index_name": idx}
 
