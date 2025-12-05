@@ -89,7 +89,7 @@ def rule_based_definition(question: str, sims: List[Dict]) -> str:
         # Best-effort citation (1st matching source)
         return f"{candidate} [1]"
     # Nothing reliable in context
-    return "No tengo información suficiente con las fuentes actuales."
+    return "Rule_based_definition failed"
 
 # --- Main generator ---
 
@@ -97,7 +97,7 @@ async def quote_then_summarize(question: str, cands: List[Dict]) -> str:
     # Limit context size
     cands = list(cands or [])[:5]
     if not cands:
-        return "No tengo información suficiente con las fuentes actuales."
+        return "No no cands provided."
     
     ctx = build_context(cands)
     
@@ -131,7 +131,7 @@ async def quote_then_summarize(question: str, cands: List[Dict]) -> str:
             # cite [1] since using the 1st source
             return " ".join(sents) + " [1]"
         # Still nothing relevant
-        return "No tengo información suficiente con las fuentes actuales."
+        return "First rule-based fallback failed."
 
     # Summarize quotes with LLM
     def _summarize_sync():
@@ -156,4 +156,4 @@ async def quote_then_summarize(question: str, cands: List[Dict]) -> str:
     sents = _best_sentences(question, [top_snippet], n=2)
     if sents:
         return " ".join(sents) + " [1]"
-    return "No tengo información suficiente con las fuentes actuales."
+    return "Final rule-based fallback failed."

@@ -60,14 +60,12 @@ def _boost_by_uri_and_text(query: str, sims: list[dict]) -> list[dict]:
         txt = (_as_text(s) or "").lower()
         score = 0
         for t in q_tokens:
-            if not t: 
-                continue
-            if t in uri:
-                score += 2    # URL/title hits are strong
-            if t in txt:
-                score += 1    # Body hits are weaker
+            if t and t in uri:
+                score += 2    # URL/title hit = strong
+            if t and t in txt:
+                score += 1    # Body hit = weaker
         # Keep the original distance score if present
-        base = s.get("score") or 0.0
+        base = float(s.get("score") or 0.0)
         return (score, base)
     return sorted(sims, key=bonus, reverse=True)
 
@@ -220,7 +218,7 @@ async def ask(payload: Query, request: Request):
             # Extractive answer (never raises)
             answer = await quote_then_summarize(q, sims)
             if not answer or not answer.strip():
-                answer = "No tengo información suficiente con las fuentes actuales."
+                answer = "Final summary failed to produce an answer."
             
             if not isinstance(answer, str) or not answer.strip():
                 # Fallback: rule-based answer
