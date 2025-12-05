@@ -50,6 +50,26 @@ def normalize_query(q: str) -> str:
     q = NORM_WS.sub(" ", q).strip()
     return q
 
+def _tokenize(s: str) -> list[str]:
+    return re.findall(r"\w+", (s or "").lower())
+
+def _boost_by_uri_and_text(query: str, sims: list[dict]) -> list[dict]:
+    q_tokens = set(_tokenize(query))
+    def bonus(s):
+        uri = (s.get("source_uri") or s.get("uri") or "").lower()
+        txt = (_as_text(s) or "").lower()
+        score = 0
+        for t in q_tokens:
+            if not t: 
+                continue
+            if t in uri:
+                score += 2    # URL/title hits are strong
+            if t in txt:
+                score += 1    # Body hits are weaker
+        # Keep the original distance score if present
+        base = s.get("score") or 0.0
+        return (score, base)
+    return sorted(sims, key=bonus, reverse=True)
 
 def _as_text(x) -> str:
     # Accept dict-like rows or ORM objects; fallback to snippet
@@ -166,6 +186,7 @@ async def ask(payload: Query, request: Request):
         
             # Guarded reranker
             sims = [s for s in (sims or []) if _as_text(s)]
+            sims = _boost_by_uri_and_text(q, sims)
             log.debug("post-filter=%d id=%s", len(sims), rid)
             if use_reranker and sims:
                 try:
@@ -197,10 +218,9 @@ async def ask(payload: Query, request: Request):
                     })
 
             # Extractive answer (never raises)
-            try:
-                answer = await quote_then_summarize(q, sims)
-            except Exception:
-                answer = ""
+            answer = await quote_then_summarize(q, sims)
+            if not answer or not answer.strip():
+                answer = "No tengo información suficiente con las fuentes actuales."
             
             if not isinstance(answer, str) or not answer.strip():
                 # Fallback: rule-based answer
