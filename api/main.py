@@ -5,7 +5,8 @@ from fastapi import FastAPI
 from sqlalchemy import text
 from api.core.db import coalesce_db_url
 from api.core.errors import json_error, EnforceJSONMiddleware
-from api.routers import ingest, query, health, metrics
+from api.routers import ingest, query, health, metrics, debug
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,6 +24,7 @@ app.add_exception_handler(Exception, json_error)
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(ingest.router, prefix="/ingest", tags=["ingest"])
 app.include_router(query.router, prefix="/query", tags=["query"])
+app.include_router(debug.router, prefix="/debug", tags=["debug"])
 app.include_router(metrics.router, prefix="/metrics", tags=["metrics"])
 
 @app.get("/health/dbdiag")

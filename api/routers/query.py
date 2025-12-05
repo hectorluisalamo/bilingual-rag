@@ -153,6 +153,10 @@ async def ask(payload: Query, request: Request):
    
             # Retrieve
             s0 = time.time()
+            try:
+                search_similar.__last_q = payload.query
+            except Exception:
+                pass
             sims = search_similar(
                 qvec,
                 k=max(payload.k, 8),

@@ -1,4 +1,4 @@
-from sqlalchemy import text, bindparam
+from sqlalchemy import text
 from api.core.db import engine
 from typing import List, Dict
 import re
@@ -51,32 +51,63 @@ def dedup_by_uri(rows):
         seen.add(uri)
         deduped.append(r)
     return deduped
-
-def _build_sql(use_literal: bool, with_topic: bool, with_country: bool):
-    cast = "CAST(:qvec AS vector)" if use_literal else ":qvec"
-    filters = ["d.approved = TRUE", "d.lang IN :langs", "c.index_name = :index_name"]
-    if with_topic:
-        filters.append("d.topic = :topic")
-    if with_country:
-        filters.append("d.country = :country")
-    where = " AND ".join(filters)
-    return text(f"""
-        SELECT c.text, c.section, c.doc_id, d.source_uri, d.lang, d.published_at,
-               1 - (c.embedding <=> {cast}) AS score
+ 
+def search_similar(
+    query_vec: list, 
+    k: int = 8, 
+    lang_filter: tuple[str, ...] = ("en","es"),
+    topic: str | None = None, 
+    country: str | None = None, 
+    index_name: str = "default"
+):
+    sql = text("""
+        SELECT
+          c.text,
+          c.section,
+          c.doc_id,
+          d.source_uri,
+          d.lang,
+          d.topic,
+          d.country,
+          d.published_at,
+          1 - (c.embedding <=> :qvec) AS score
         FROM chunks c
         JOIN documents d ON d.id = c.doc_id
-        WHERE {where}
-        ORDER BY c.embedding <=> {cast}
+        WHERE d.approved = TRUE
+          AND c.embedding IS NOT NULL
+          AND d.lang = ANY(:langs)
+          AND (:topic IS NULL OR d.topic = :topic)
+          AND (:country IS NULL OR d.country = :country)
+          AND (:index_name IS NULL OR c.index_name = :index_name)
+        ORDER BY c.embedding <=> :qvec
         LIMIT :k
-    """).bindparams(bindparam("langs", expanding=True))
- 
-def search_similar(query_vec: list, k: int = 8, lang_filter=("en","es"), 
-                   topic: str | None = None, country: str | None = None, 
-                   index_name: str = "default") -> List[Dict]:
-    langs = list(lang_filter)
-    with engine.begin() as conn:
-        params = {"qvec": query_vec, "langs": langs, "k": k, "topic": topic,
-                  "country": country, "index_name": index_name}
-        sql = _build_sql(use_literal=True, with_topic=bool(topic), with_country=bool(country))
-        rows = conn.execute(sql, params).mappings().all()
-    return [dict(r) for r in rows]
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sql,
+            {
+                "qvec": query_vec,                 
+                "langs": list(lang_filter or ()),
+                "topic": topic,
+                "country": country,
+                "index_name": index_name,
+                "k": int(k),
+            },
+        ).mappings().all()
+
+    # Light, deterministic boost if query token appears in URI or text
+    def _tok(s): 
+        import re
+        return set(re.findall(r"\w+", (s or "").lower()))
+    qtok = _tok(getattr(search_similar, "_last_q", ""))  # Set by caller
+    def bonus(r):
+        uri = (r.get("source_uri") or "").lower()
+        txt = (r.get("text") or "").lower()
+        b = 0
+        for t in qtok:
+            if t and t in uri: b += 2
+            if t and t in txt: b += 1
+        return (b, float(r.get("score") or 0.0))
+
+    return sorted(rows, key=bonus, reverse=True)

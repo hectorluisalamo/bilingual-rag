@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, json, pathlib, time, sys, itertools
+import argparse, json, pathlib, time, sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import httpx
 
@@ -16,26 +16,37 @@ def post_ingest(api, item, index_name, max_tokens, overlap, embedding_model, tim
         "embedding_model": embedding_model,
     }
     headers = {"Content-Type": "application/json"}
+    
+    _timeout = httpx.Timeout(timeout, connect=timeout, read=timeout, write=timeout, pool=timeout)
+    last_err = None
     for attempt in range(1, 4):
         try:
             with httpx.Client(timeout=timeout, follow_redirects=True) as client:
                 r = client.post(f"{api}/ingest/url", headers=headers, json=payload)
-                if r.status_code == 200:
-                    return True, r.json()
-                detail = r.text
-                try:
-                    detail = r.json()
-                except Exception:
-                    pass
-                # retry on 5xx and transient 422 "no_chunks_made" only once
-                if r.status_code >= 500 or (r.status_code == 422 and "no_chunks_made" in str(detail) and attempt == 1):
-                    time.sleep(min(2**attempt, 5))
-                    continue
-                return False, {"status": r.status_code, "detail": detail}
-        except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as e:
-            time.sleep(min(2**attempt, 5))
-            last = str(e)
-    return False, {"status": "network_error", "detail": last}
+            status = r.status_code
+            try:
+                body = r.json()
+            except Exception:
+                body = None
+            if status == 200:
+                return True, body
+            
+            detail = body if body is not None else {"text": r.text}
+            if status >= 500 or (status == 422 and "no_chunks_made" in str(detail) and attempt == 1):
+                time.sleep(min(2 ** attempt, 5))
+                continue
+            
+            return False, {"status": status, "detail": detail}
+        
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError) as e:
+            last_err = f"{type(e).__name__}: {str(e)}"
+            time.sleep(min(2 ** attempt, 5))
+            continue
+        except Exception as e:
+            # Always return tuple
+            return False, {"status": "client_exception", "detail": f"{type(e).__name__}: {str(e)}"}
+        
+    return False, {"status": "network_error", "detail": last_err or "unknown"}
 
 def main():
     ap = argparse.ArgumentParser()
@@ -72,8 +83,12 @@ def main():
     fail_f = fail_path.open("a")
 
     def work(item):
-        ok, data = post_ingest(args.api, item, args.index_name, args.max_tokens, args.overlap, args.embedding_model, args.timeout)
-        return item, ok, data
+        try:
+            ok, data = post_ingest(args.api, item, args.index_name, args.max_tokens, 
+                                   args.overlap, args.embedding_model, args.timeout)
+            return item, ok, data
+        except Exception as e:
+            return item, False, {"status": "worker_exception", "detail": f"{type(e).__name__}: {str(e)}"}
 
     submitted = 0
     with ThreadPoolExecutor(max_workers=args.concurrency) as ex:
