@@ -1,29 +1,33 @@
-from sqlalchemy import create_engine, event
-from sqlalchemy.pool import QueuePool
+# api/core/db.py
+from sqlalchemy import create_engine, text
 from api.core.config import settings
+import os, glob, logging
 
-try:
-    from pgvector.psycopg2 import register_vector
-except Exception:
-    register_vector = None
+log = logging.getLogger("api.db")
 
 engine = create_engine(
     settings.db_url,
-    poolclass=QueuePool,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=10,
-    pool_recycle=180
+    pool_pre_ping=True,         # drops dead connections
+    pool_recycle=300,           # avoid stale sockets
 )
 
-VECTOR_ADAPTER = False
+def run_sql_file(path: str):
+    with engine.begin() as conn:
+        with open(path, "r", encoding="utf-8") as f:
+            sql = f.read()
+        for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+            conn.exec_driver_sql(stmt + ";")
 
-@event.listens_for(engine, "connect")
-def _on_connect(dbapi_connection, connection_record):
-    global VECTOR_ADAPTER
-    if register_vector is not None and not VECTOR_ADAPTER:
+def run_startup_migrations():
+    # Execute *.sql in migrations/ in lexical order
+    paths = sorted(glob.glob(os.path.join(os.path.dirname(__file__), "..", "..", "migrations", "*.sql")))
+    # Also support when running from project root inside container
+    if not paths and os.path.isdir("migrations"):
+        paths = sorted(glob.glob("migrations/*.sql"))
+    for p in paths:
         try:
-            register_vector(dbapi_connection)
-            VECTOR_ADAPTER = True
-        except Exception:
-            VECTOR_ADAPTER = False
+            log.info("migration start %s", p)
+            run_sql_file(p)
+            log.info("migration ok    %s", p)
+        except Exception as e:
+            log.warning("migration skip %s (%s)", p, type(e).__name__)

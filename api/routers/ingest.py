@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from api.core.db import engine, VECTOR_ADAPTER
+from api.core.db import engine
 from api.rag.chunk import chunk_by_tokens, split_unicode
 from api.rag.embed import embed_texts
 from api.rag.fetch import fetch_text
@@ -61,11 +61,7 @@ async def ingest_url(item: IngestURL):
     embeds = await embed_texts([c for c,_ in chunks], model=item.embedding_model)
 
     # If adapter is not active, cast embeddings to vector literal for insert
-    payload = []
-    if VECTOR_ADAPTER:
-        payload = [(c, t, e, item.section) for (c,t), e in zip(chunks, embeds)]
-    else:
-        payload = [(c, t, _to_pgvector_literal(e), item.section) for (c,t), e in zip(chunks, embeds)]
+    payload = [(c, t, _to_pgvector_literal(e), item.section) for (c,t), e in zip(chunks, embeds)]
 
     # store
     from sqlalchemy import text
@@ -116,8 +112,6 @@ async def ingest_raw(item: IngestRaw):
 
     embeds = await embed_texts([c for c,_ in chunks], model=item.embedding_model)
     payload = (
-        [(c, t, e, item.section) for (c,t), e in zip(chunks, embeds)]
-        if VECTOR_ADAPTER else
         [(c, t, _to_pgvector_literal(e), item.section) for (c,t), e in zip(chunks, embeds)]
     )
 

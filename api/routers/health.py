@@ -25,13 +25,23 @@ def ready():
 @router.get("/dbdiag")
 def dbdiag():
     try:
-        with engine.begin() as conn:
-            ext = conn.execute(text("SELECT extname FROM pg_extension WHERE extname='vector'")).fetchone()
-            docs = conn.execute(text("SELECT count(*) FROM documents")).scalar()
-            chks = conn.execute(text("SELECT count(*) FROM chunks")).scalar()
-            idxs = conn.execute(text("SELECT index_name, count(*) FROM chunks GROUP BY index_name ORDER BY index_name")).all()
-        return {"vector_ext": bool(ext), "documents": int(docs or 0), "chunks": int(chks or 0),
-                "indices": [{"index_name": r[0], "chunks": int(r[1])} for r in idxs]}
+        out = {}
+        with engine.connect() as conn:
+            ver = conn.execute(text("select version()")).scalar()
+            db  = conn.execute(text("select current_database()")).scalar()
+            user= conn.execute(text("select current_user")).scalar()
+            exts = [r[0] for r in conn.execute(text("select extname from pg_extension order by 1"))]
+            # Counts guarded
+            try:
+                dc = conn.execute(text("select count(*) from documents")).scalar()
+                cc = conn.execute(text("select count(*) from chunks")).scalar()
+            except Exception:
+                dc = cc = None
+        out.update({
+            "version": ver, "database": db, "user": user,
+            "extensions": exts, "documents": dc, "chunks": cc
+        })
+        return out
     except Exception as e:
         return {"error": type(e).__name__, "message": str(e)}
 

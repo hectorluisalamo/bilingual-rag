@@ -1,5 +1,5 @@
 from sqlalchemy import text, bindparam
-from api.core.db import engine, VECTOR_ADAPTER
+from api.core.db import engine
 from typing import List, Dict
 import re
 
@@ -77,10 +77,6 @@ def search_similar(query_vec: list, k: int = 8, lang_filter=("en","es"),
     with engine.begin() as conn:
         params = {"qvec": query_vec, "langs": langs, "k": k, "topic": topic,
                   "country": country, "index_name": index_name}
-        if VECTOR_ADAPTER:
-            sql = _build_sql(use_literal=False, with_topic=bool(topic), with_country=bool(country))
-            rows = conn.execute(sql, params).mappings().all()
-        else:
-            sql = _build_sql(use_literal=True, with_topic=bool(topic), with_country=bool(country))
-            rows = conn.execute(sql, params).mappings().all()
+        sql = _build_sql(use_literal=True, with_topic=bool(topic), with_country=bool(country))
+        rows = conn.execute(sql, params).mappings().all()
     return [dict(r) for r in rows]

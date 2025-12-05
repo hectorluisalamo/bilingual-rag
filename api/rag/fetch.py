@@ -2,7 +2,6 @@ import httpx, urllib
 from bs4 import BeautifulSoup
 import redis
 from api.core.config import settings
-from fastapi import HTTPException
 
 UA = settings.ua
 

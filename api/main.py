@@ -1,9 +1,16 @@
+from contextlib import asynccontextmanager
+from api.core.db import run_startup_migrations
 from fastapi import FastAPI
 from api.core.errors import json_error, EnforceJSONMiddleware
 from api.routers import ingest, query, health, metrics
 import logging, sys
 
-app = FastAPI(title="Bilingual RAG Chatbot")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    run_startup_migrations()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 logging.basicConfig(
     level=logging.DEBUG,
