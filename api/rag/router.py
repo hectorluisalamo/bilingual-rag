@@ -1,4 +1,4 @@
-import json, re
+import json, re, os
 from typing import Literal
 
 INJECTION = re.compile(r"ignore previous|system prompt|do anything now", re.I)
@@ -13,9 +13,12 @@ def route(query: str, faq_index: dict) -> tuple[Literal["faq","rag","memory_only
     return "rag", "default"
 
 def load_faq(path: str) -> dict:
-    faq = {}
-    with open(path) as f:
-        for line in f:
-            obj = json.loads(line)
-            faq[obj["q"].strip().lower()] = obj["a"]
-    return faq
+    if not path:
+        return {}
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+        if not content:
+            return {}
+        return json.loads(content)

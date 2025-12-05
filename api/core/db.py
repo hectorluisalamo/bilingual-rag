@@ -1,14 +1,18 @@
 # api/core/db.py
-from sqlalchemy import create_engine, text
-from api.core.config import settings
+from sqlalchemy import create_engine
 import os, glob, logging
 
 log = logging.getLogger("api.db")
 
+DB = os.getenv("DB_URL", "")
+
 engine = create_engine(
-    settings.db_url,
+    DB,
     pool_pre_ping=True,         # drops dead connections
     pool_recycle=300,           # avoid stale sockets
+    pool_size=int(os.getenv("DB_POOL_SIZE") or 5),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW") or 5),
+    future=True,
 )
 
 def run_sql_file(path: str):
@@ -19,15 +23,11 @@ def run_sql_file(path: str):
             conn.exec_driver_sql(stmt + ";")
 
 def run_startup_migrations():
-    # Execute *.sql in migrations/ in lexical order
-    paths = sorted(glob.glob(os.path.join(os.path.dirname(__file__), "..", "..", "migrations", "*.sql")))
-    # Also support when running from project root inside container
-    if not paths and os.path.isdir("migrations"):
-        paths = sorted(glob.glob("migrations/*.sql"))
+    paths = sorted(glob.glob("migrations/*.sql"))
     for p in paths:
         try:
-            log.info("migration start %s", p)
+            log.info(f"migration start {p}")
             run_sql_file(p)
-            log.info("migration ok    %s", p)
+            log.info(f"migration ok {p}")
         except Exception as e:
-            log.warning("migration skip %s (%s)", p, type(e).__name__)
+            log.warning("migration_skip", extra={"msg": f"{p} {type(e).__name__}: {e}"})

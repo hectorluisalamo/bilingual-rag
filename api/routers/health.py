@@ -1,12 +1,8 @@
 from fastapi import APIRouter
-from sqlalchemy import text
 from api.core.db import engine
-from api.core.config import settings
-import os, httpx, redis, time
+import os, httpx, time
 
 router = APIRouter()
-
-_rds = redis.from_url(settings.redis_url) if settings.redis_url else None
 
 @router.get("/live")
 def live():
@@ -21,29 +17,6 @@ def ready():
     except Exception:
         db = "degraded"
     return {"status": "ok", "db": db}
-    
-@router.get("/dbdiag")
-def dbdiag():
-    try:
-        out = {}
-        with engine.connect() as conn:
-            ver = conn.execute(text("select version()")).scalar()
-            db  = conn.execute(text("select current_database()")).scalar()
-            user= conn.execute(text("select current_user")).scalar()
-            exts = [r[0] for r in conn.execute(text("select extname from pg_extension order by 1"))]
-            # Counts guarded
-            try:
-                dc = conn.execute(text("select count(*) from documents")).scalar()
-                cc = conn.execute(text("select count(*) from chunks")).scalar()
-            except Exception:
-                dc = cc = None
-        out.update({
-            "version": ver, "database": db, "user": user,
-            "extensions": exts, "documents": dc, "chunks": cc
-        })
-        return out
-    except Exception as e:
-        return {"error": type(e).__name__, "message": str(e)}
 
 @router.get("/routes")
 def routes():
@@ -70,7 +43,9 @@ async def embeddings_probe():
     
 @router.get("/env")
 def env():
-    return {"db_url": settings.db_url, "default_index_name": settings.default_index_name}
+    db = os.getenv("DB_URL", "")
+    idx = os.getenv("DEFAULT_INDEX_NAME", "c300o45")
+    return {"db_url": db, "default_index_name": idx}
 
 @router.get("/net")
 def net(url: str = "https://es.wikipedia.org/wiki/Arepa"):

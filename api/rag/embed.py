@@ -1,5 +1,4 @@
 import os, httpx, hashlib, math
-from api.core.config import settings
 from typing import List
 import tiktoken
 
@@ -7,7 +6,7 @@ OPENAI_BASE = os.getenv("OPENAI_BASE", "https://api.openai.com/v1")
 API_KEY = os.getenv("OPENAI_API_KEY")
 MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 EMBED_DIM = 1536 # text-embedding-3-*
-TIMEOUT = httpx.Timeout(settings.http_timeout_s, read=settings.tout_read, connect=settings.tout_connect)
+TIMEOUT = httpx.Timeout(float(os.getenv("HTTP_TIMEOUT", "15")), read=float(os.getenv("TOUT_READ", "5")), connect=float(os.getenv("TOUT_CONNECT", "5")))
 
 _headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 _enc = tiktoken.get_encoding("cl100k_base")

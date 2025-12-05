@@ -1,7 +1,6 @@
 from __future__ import annotations
-import json, time
+import os, json, time
 from typing import Any, Dict, Optional
-from api.core.config import settings
 
 # Lazy import so tests without the package still run
 try:
@@ -12,13 +11,15 @@ except Exception:
 
 _client = None
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
 def _client_ok() -> bool:
-    return bool(settings.openai_api_key) and OpenAI is not None
+    return bool(OPENAI_API_KEY) and OpenAI is not None
 
 def _get_client():
     global _client
     if _client is None and _client_ok():
-        _client = OpenAI(api_key=settings.openai_api_key)
+        _client = OpenAI(api_key=OPENAI_API_KEY)
     return _client
 
 def openai_chat(
@@ -36,7 +37,7 @@ def openai_chat(
     Returns str by default; when json_mode=True returns parsed dict
     Fallback (no API key): returns echo/extracted stub so the app won't crash
     """
-    use_model = model or settings.llm_model
+    use_model = model or os.getenv("LLM_MODEL", "gpt-4o-mini")
 
     if not _client_ok():
         # local fallback

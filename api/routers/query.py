@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, Request
 from typing import Annotated, List, Mapping, Optional
 from pydantic import BaseModel, StringConstraints, Field, model_validator
-from api.core.config import settings
 from api.rag.embed import embed_texts
 from api.rag.retrieve import search_similar
 from api.rag.router import load_faq
@@ -10,24 +9,25 @@ from api.rag.generate import quote_then_summarize
 from api.routers.metrics import REQUESTS, LATENCY, EMB_LAT, DB_LAT
 import asyncio, unicodedata, re, time, os, logging
 
+FAQ = {}
+NORM_WS = re.compile(r"\s+")
+topics = {"food","culture","health","civics","education"}
+timeout = int(os.getenv("QUERY_TIMEOUT_SEC", "8"))
+log = logging.getLogger("api.query")
 
 @asynccontextmanager
 async def lifespan(app: APIRouter):
     global FAQ
+    faq_path = os.getenv("FAQ_PATH")
     try:
-        FAQ = load_faq(settings.router_faq_path)
-    except FileNotFoundError:
+        FAQ = load_faq(faq_path)
+        log.info("faq_loaded", extra={"msg": f"path={faq_path!r} size={len(FAQ)}"})
+    except Exception as e:
         FAQ = {}
+        log.warning("faq_load_failed", extra={"msg": f"path={faq_path!r} err={type(e).__name__}"})
     yield
     
 router = APIRouter(lifespan=lifespan)
-
-FAQ = None
-NORM_WS = re.compile(r"\s+")
-VALID_TOPICS = {"food","culture","health","civics","education"}
-QUERY_TIMEOUT_SEC = int(os.getenv("QUERY_TIMEOUT_SEC", "8"))
-Q_LOGGER = logging.getLogger("api.query")
-
 
 class Query(BaseModel):
     query: Annotated[str, StringConstraints(min_length=2, max_length=512)]
@@ -40,8 +40,8 @@ class Query(BaseModel):
     
     @model_validator(mode="after")
     def _validate_hints(self):
-        if self.topic_hint and self.topic_hint not in VALID_TOPICS:
-            raise ValueError(f"topic_hint must be one of {sorted(VALID_TOPICS)}")
+        if self.topic_hint and self.topic_hint not in topics:
+            raise ValueError(f"topic_hint must be one of {sorted(topics)}")
         return self
       
     
@@ -109,7 +109,7 @@ async def ask(payload: Query, request: Request):
     async def _query_task():
         sims: List = []
         answer: str = ""
-        Q_LOGGER.info("req start id=%s q=%r k=%s lang=%s rerank=%s index=%s",
+        log.info("req start id=%s q=%r k=%s lang=%s rerank=%s index=%s",
             rid, q, payload.k, lang, payload.use_reranker, index_name)
         
         try:
@@ -119,7 +119,7 @@ async def ask(payload: Query, request: Request):
             embs = await embed_texts([q])
             EMB_LAT.observe((time.time() - e0) * 1000)
             qvec = embs[0]
-            Q_LOGGER.debug("embed ok id=%s dim=%s", rid, len(qvec) if embs and qvec else None)
+            log.debug("embed ok id=%s dim=%s", rid, len(qvec) if embs and qvec else None)
    
             env_gate = os.getenv("RERANK_ENABLED", "0") in ("1","true","True")
             use_reranker = bool(payload.use_reranker) and env_gate
@@ -134,13 +134,13 @@ async def ask(payload: Query, request: Request):
                 country=payload.country_hint,
                 index_name=index_name
             )
-            Q_LOGGER.debug("retrieved=%d id=%s", len(sims or []), rid)
+            log.debug("retrieved=%d id=%s", len(sims or []), rid)
             if sims:
                 first = sims[0]
                 if isinstance(first, dict):
-                    Q_LOGGER.debug("sims0: dict keys=%s id=%s", list(first.keys()), rid)
+                    log.debug("sims0: dict keys=%s id=%s", list(first.keys()), rid)
                 else:
-                    Q_LOGGER.debug("sims0: type=%s has_text=%s id=%s", type(first).__name__, hasattr(first, "text"), rid)
+                    log.debug("sims0: type=%s has_text=%s id=%s", type(first).__name__, hasattr(first, "text"), rid)
 
             # Fallback if empty
             if not sims:
@@ -153,19 +153,18 @@ async def ask(payload: Query, request: Request):
                     index_name=index_name
                 )
             DB_LAT.observe((time.time() - s0) * 1000)
-            Q_LOGGER.debug("retrieved=%d id=%s", len(sims or []), rid)
+            log.debug("retrieved=%d id=%s", len(sims or []), rid)
         
             # Guarded reranker
             sims = [s for s in (sims or []) if _as_text(s)]
-            Q_LOGGER.debug("post-filter=%d id=%s", len(sims), rid)
-
+            log.debug("post-filter=%d id=%s", len(sims), rid)
             if use_reranker and sims:
                 try:
                     from api.rag.rerank import rerank
-                    Q_LOGGER.debug("rerank start id=%s", rid)
+                    log.debug("rerank start id=%s", rid)
                     # Ensure each item has a string to rank
                     sims = rerank(q, sims, top_k=payload.k)
-                    Q_LOGGER.debug("rerank done n=%d id=%s", len(sims), rid)
+                    log.debug("rerank done n=%d id=%s", len(sims), rid)
                 except Exception:
                     sims = sims[: payload.k]
             else:
@@ -206,21 +205,25 @@ async def ask(payload: Query, request: Request):
             return {"route": "rag", "answer": answer, "citations": cites, "request_id": rid}
         
         except Exception as e:
-            Q_LOGGER.exception("query_failed id=%s etype=%s", rid, type(e).__name__)
-            # IMPORTANT: return schema (status 200), not HTTPException/detail
+            log.exception("query_failed id=%s etype=%s", rid, index_name)
+            # Return schema (status 200), not HTTPException/detail
             return {
                 "route": "error",
                 "answer": "",
                 "citations": [],
                 "request_id": rid,
-                "error": {"code":"internal_error","type":type(e).__name__}
+                "error": {
+                    "code": "internal_error", 
+                    "type": type(e).__name__,
+                    "msg": str(e)[:300]
+                }
             }
         
     try:
-        result = await asyncio.wait_for(_query_task(), timeout=QUERY_TIMEOUT_SEC)
+        result = await asyncio.wait_for(_query_task(), timeout=timeout)
         return result
     except asyncio.TimeoutError:
-        Q_LOGGER.warning("query_timeout id=%s budget=%ss", rid, QUERY_TIMEOUT_SEC)
+        log.warning("query_timeout id=%s budget=%ss", rid, timeout)
         # Still return schema-shape so UI doesn’t crash
         return {"route":"timeout","answer":"","citations":[],"request_id":rid,"error":{"code":"timeout"}}
     

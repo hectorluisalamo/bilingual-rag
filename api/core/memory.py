@@ -1,12 +1,10 @@
 import json, time, os
 import redis
-from api.core.config import settings
 
 TTL_SECS = int(os.getenv("MEMORY_TTL_SECS", "172800"))  # 48h
 MAX_ITEMS = int(os.getenv("MEMORY_MAX_ITEMS", "12"))
 
-_rds = redis.from_url(settings.redis_url) if settings.redis_url else None
-
+_rds = redis.from_url(os.getenv("REDIS_URL")) if os.getenv("REDIS_URL") else None
 def _key(user_id: str) -> str:
     return f"mem:{user_id}"
 

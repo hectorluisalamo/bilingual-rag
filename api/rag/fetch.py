@@ -1,17 +1,16 @@
-import httpx, urllib
+import os, httpx, urllib
 from bs4 import BeautifulSoup
-from api.core.config import settings
 
-UA = settings.ua
+UA = os.getenv("USER_AGENT", "LatinoRAGBot/0.1 (+https://demo.local)")
 
-TIMEOUT = httpx.Timeout(settings.http_timeout_s, read=settings.tout_read, connect=settings.tout_connect)
+TIMEOUT = httpx.Timeout(float(os.getenv("HTTP_TIMEOUT", "15")), read=float(os.getenv("TOUT_READ", "25")), connect=float(os.getenv("TOUT_CONNECT", "5")))
 
 async def fetch_text(url: str) -> str:
     headers = {
-        "User-Agent": "LatinoRAGBot/0.1 (+https://demo.local)",
+        "User-Agent": UA,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
     # 1) Fetch HTML
-    timeout = httpx.Timeout(15.0, read=25.0, connect=5.0)
+    timeout = TIMEOUT
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
         r = await client.get(url)
         r.raise_for_status()
