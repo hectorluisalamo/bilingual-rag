@@ -15,4 +15,4 @@ def test_query_schema(client, body):
 def test_query_limits(client):
     big = {"query": "x"*600, "k": 9}
     r = client.post("/query/", json=big, timeout=20)
-    assert r.status_code == 200
+    assert r.status_code == 422  # Too long
