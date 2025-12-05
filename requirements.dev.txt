@@ -4,6 +4,7 @@ psycopg2-binary>=2.9
 pgvector
 httpx
 beautifulsoup4
+rapidfuzz
 redis
 structlog
 prometheus_client
