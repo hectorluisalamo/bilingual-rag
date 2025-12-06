@@ -60,6 +60,7 @@ def search_similar(
     country: str | None = None, 
     index_name: str = "default"
 ):
+    qvec_literal = _to_pgvector_literal(query_vec)
     sql = text("""
         SELECT
           c.text,
@@ -70,7 +71,7 @@ def search_similar(
           d.topic,
           d.country,
           d.published_at,
-          1 - (c.embedding <=> :qvec) AS score
+          1 - (c.embedding <=> :qvec::vector) AS score
         FROM chunks c
         JOIN documents d ON d.id = c.doc_id
         WHERE d.approved = TRUE
@@ -79,7 +80,7 @@ def search_similar(
           AND (:topic IS NULL OR d.topic = :topic)
           AND (:country IS NULL OR d.country = :country)
           AND (:index_name IS NULL OR c.index_name = :index_name)
-        ORDER BY c.embedding <=> :qvec
+        ORDER BY c.embedding <=> :qvec::vector
         LIMIT :k
     """)
 
@@ -87,7 +88,7 @@ def search_similar(
         rows = conn.execute(
             sql,
             {
-                "qvec": query_vec,                 
+                "qvec": qvec_literal,                 
                 "langs": list(lang_filter or ()),
                 "topic": topic,
                 "country": country,
