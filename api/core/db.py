@@ -1,5 +1,10 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 import os, glob, logging, re
+
+try:
+    from pgvector.psycopg2 import register_vector
+except ImportError:
+    register_vector = None
 
 log = logging.getLogger("api.db")
 
@@ -41,6 +46,8 @@ engine = create_engine(
     future=True,
 )
 
+VECTOR_ADAPTER = False
+
 def run_sql_file(path: str):
     with engine.begin() as conn:
         with open(path, "r", encoding="utf-8") as f:
@@ -57,3 +64,14 @@ def run_startup_migrations():
             log.info(f"migration ok {p}")
         except Exception as e:
             log.warning("migration_skip", extra={"msg": f"{p} {type(e).__name__}: {e}"})
+            
+@event.listens_for(engine, "connect")
+def _on_connect(dbapi_connection, connection_record):
+    global VECTOR_ADAPTER
+    if register_vector is not None and not VECTOR_ADAPTER:
+        try:
+            register_vector(dbapi_connection)
+            VECTOR_ADAPTER = True
+        except Exception:
+            VECTOR_ADAPTER = False
+

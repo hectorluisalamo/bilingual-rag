@@ -1,7 +1,9 @@
-from sqlalchemy import text
-from api.core.db import engine
-from typing import List, Dict
 import re
+from sqlalchemy import text, bindparam
+from api.core.db import engine
+from typing import List, Dict, Iterable, Optional
+from sqlalchemy.dialects.postgresql import TEXT
+from pgvector.sqlalchemy import Vector
 
 _WORD = re.compile(r"\w+", re.UNICODE)
 
@@ -51,64 +53,74 @@ def dedup_by_uri(rows):
         seen.add(uri)
         deduped.append(r)
     return deduped
- 
-def search_similar(
-    query_vec: list, 
-    k: int = 8, 
-    lang_filter: tuple[str, ...] = ("en","es"),
-    topic: str | None = None, 
-    country: str | None = None, 
-    index_name: str = "default"
-):
-    qvec_literal = _to_pgvector_literal(query_vec)
-    sql = text("""
-        SELECT
-          c.text,
-          c.section,
-          c.doc_id,
-          d.source_uri,
-          d.lang,
-          d.topic,
-          d.country,
-          d.published_at,
-          1 - (c.embedding <=> :qvec::vector) AS score
-        FROM chunks c
-        JOIN documents d ON d.id = c.doc_id
-        WHERE d.approved = TRUE
-          AND c.embedding IS NOT NULL
-          AND d.lang = ANY(:langs)
-          AND (:topic IS NULL OR d.topic = :topic)
-          AND (:country IS NULL OR d.country = :country)
-          AND (:index_name IS NULL OR c.index_name = :index_name)
-        ORDER BY c.embedding <=> :qvec::vector
-        LIMIT :k
-    """)
 
-    with engine.connect() as conn:
+SQL = text("""
+SELECT
+  c.text,
+  c.section,
+  c.doc_id,
+  d.source_uri,
+  d.lang,
+  d.published_at,
+  1 - (c.embedding <=> :qvec) AS score
+FROM chunks c
+JOIN documents d ON d.id = c.doc_id
+WHERE d.approved = TRUE
+  AND c.index_name = :index_name
+  AND d.lang IN :langs
+  -- optional topic/country gates; only apply if provided
+  /*topic*/    /*country*/
+ORDER BY c.embedding <=> :qvec
+LIMIT :k
+""")
+
+def _apply_optional_filters(sql: text, topic: Optional[str], country: Optional[str]) -> text:
+    s = sql.text
+    params = {}
+    if topic:
+        s = s.replace("/*topic*/", "AND d.topic = :topic")
+        params["topic"] = topic
+    else:
+        s = s.replace("/*topic*/", "")
+    if country:
+        s = s.replace("/*country*/", "AND d.country = :country")
+        params["country"] = country
+    else:
+        s = s.replace("/*country*/", "")
+    return text(s).bindparams(**{k: bindparam(k, value=v) for k, v in params.items()})
+
+def search_similar(
+    query_vec: list[float],
+    *,
+    k: int,
+    lang_filter: Iterable[str],
+    index_name: str,
+    topic: Optional[str] = None,
+    country: Optional[str] = None,
+) -> list[dict]:
+    langs = list(lang_filter) or ["es", "en"]
+
+    sql = text(_apply_optional_filters(topic, country)).bindparams(
+        # vector param — no manual ::vector cast
+        bindparam("qvec", type_=Vector(1536)),
+        # expanding list -> (..., ..., ...)
+        bindparam("langs", value=langs, expanding=True),
+        bindparam("index_name", type_=TEXT),
+        bindparam("k"),
+    )
+    if topic:
+        sql = sql.bindparams(bindparam("topic", type_=TEXT))
+    if country:
+        sql = sql.bindparams(bindparam("country", type_=TEXT))
+
+    with engine.connect() as conn: 
         rows = conn.execute(
             sql,
             {
-                "qvec": qvec_literal,                 
-                "langs": list(lang_filter or ()),
-                "topic": topic,
-                "country": country,
-                "index_name": index_name,
-                "k": int(k),
-            },
+                "qvec": query_vec, 
+                "index_name": index_name, 
+                "k": int(k)}
+                **({"topic": topic} if topic else {}),
+                **({"country": country} if country else {})
         ).mappings().all()
-
-    # Light, deterministic boost if query token appears in URI or text
-    def _tok(s): 
-        import re
-        return set(re.findall(r"\w+", (s or "").lower()))
-    qtok = _tok(getattr(search_similar, "_last_q", ""))  # Set by caller
-    def bonus(r):
-        uri = (r.get("source_uri") or "").lower()
-        txt = (r.get("text") or "").lower()
-        b = 0
-        for t in qtok:
-            if t and t in uri: b += 2
-            if t and t in txt: b += 1
-        return (b, float(r.get("score") or 0.0))
-
-    return sorted(rows, key=bonus, reverse=True)
+        return [dict(r) for r in rows]
