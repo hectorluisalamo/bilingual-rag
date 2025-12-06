@@ -1,7 +1,7 @@
 import re
 from sqlalchemy import text, bindparam
 from api.core.db import engine
-from typing import List, Dict, Iterable, Optional
+from typing import List, Dict, Iterable, Optional, Any
 from sqlalchemy.dialects.postgresql import TEXT
 from pgvector.sqlalchemy import Vector
 
@@ -108,14 +108,16 @@ def search_similar(
     if country:
         sql = sql.bindparams(bindparam("country", type_=TEXT))
 
-    with engine.connect() as conn: 
-        rows = conn.execute(
-            sql,
-            {
-                "qvec": query_vec, 
-                "index_name": index_name, 
-                "k": int(k)}
-                **({"topic": topic} if topic else {}),
-                **({"country": country} if country else {})
-        ).mappings().all()
+    params: Dict[str, Any] = {
+        "qvec": query_vec,
+        "index_name": index_name,
+        "k": int(k),
+    }
+    if topic:
+        params["topic"] = topic
+    if country:
+        params["country"] = country
+
+    with engine.connect() as conn:
+        rows = conn.execute(sql, params).mappings().all()
         return [dict(r) for r in rows]
