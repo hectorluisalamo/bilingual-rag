@@ -42,7 +42,7 @@ use_reranker = st.sidebar.checkbox("Use reranker", value=False, key="use_reranke
 st.sidebar.caption("Reranker improves precision; adds ~20–40ms when enabled.")
 
 # --- Main ---
-st.title("Latino RAG Chatbot")
+st.title("Latino RAG Chatbot 🤖")
 st.caption("Bilingual retrieval-augmented generation with citations.")
 
 query = st.text_area("Pregunta" if ui_lang=="es" else "Question", max_chars=512, key="query_text")
