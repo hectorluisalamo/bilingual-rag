@@ -54,7 +54,7 @@ def dedup_by_uri(rows):
         deduped.append(r)
     return deduped
 
-SQL = text("""
+SQL_TXT = """
 SELECT
   c.text,
   c.section,
@@ -68,26 +68,23 @@ JOIN documents d ON d.id = c.doc_id
 WHERE d.approved = TRUE
   AND c.index_name = :index_name
   AND d.lang IN :langs
-  -- optional topic/country gates; only apply if provided
+  -- optional topic/country gates, only apply if provided
   /*topic*/    /*country*/
 ORDER BY c.embedding <=> :qvec
 LIMIT :k
-""")
+"""
 
-def _apply_optional_filters(sql: text, topic: Optional[str], country: Optional[str]) -> text:
-    s = sql.text
-    params = {}
+def _apply_optional_filters(sql: text, topic: Optional[str] = None, country: Optional[str] = None) -> str:
+    s = SQL_TXT
     if topic:
         s = s.replace("/*topic*/", "AND d.topic = :topic")
-        params["topic"] = topic
     else:
         s = s.replace("/*topic*/", "")
     if country:
         s = s.replace("/*country*/", "AND d.country = :country")
-        params["country"] = country
     else:
         s = s.replace("/*country*/", "")
-    return text(s).bindparams(**{k: bindparam(k, value=v) for k, v in params.items()})
+    return s
 
 def search_similar(
     query_vec: list[float],
@@ -100,10 +97,8 @@ def search_similar(
 ) -> list[dict]:
     langs = list(lang_filter) or ["es", "en"]
 
-    sql = text(_apply_optional_filters(topic, country)).bindparams(
-        # vector param — no manual ::vector cast
+    sql = text(_apply_optional_filters(SQL_TXT, topic, country)).bindparams(
         bindparam("qvec", type_=Vector(1536)),
-        # expanding list -> (..., ..., ...)
         bindparam("langs", value=langs, expanding=True),
         bindparam("index_name", type_=TEXT),
         bindparam("k"),
