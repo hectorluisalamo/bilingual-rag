@@ -2,6 +2,7 @@ import os, time, httpx, json
 import streamlit as st
 
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+IDX = os.getenv("DEFAULT_INDEX_NAME", "c300o45")
 
 # --- Clear session state ---
 if st.session_state.get("_do_clear"):
@@ -32,9 +33,7 @@ def post_query(query: str, *, index_name: str, lang_pref: list[str], k: int,
 
 # --- Sidebar ---
 ui_lang = st.sidebar.selectbox("UI language / Idioma de la UI", ["es","en"], index=0, key="ui_lang")
-index_name = st.sidebar.text_input(
-    "Index name", value=os.getenv("DEFAULT_INDEX_NAME", "c300o45"), key="index_name", disabled=True
-)
+
 topic = st.sidebar.selectbox("Topic / Tema", ["", "food", "culture", "gov", "health", "education"], index=1, key="topic")
 lang_pref = st.sidebar.multiselect("Language preference", options=["es","en"], default=["es"], key="lang_pref")
 k = st.sidebar.slider("Top-K", 1, 8, 5, key="topk")
@@ -53,7 +52,7 @@ with col_search:
     if st.button("Buscar" if ui_lang=="es" else "Search", type="primary"):
         r, dt_ms, payload = post_query(
             query,
-            index_name=index_name,
+            index_name=IDX,
             lang_pref=lang_pref,
             k=k,
             use_reranker=use_reranker,
