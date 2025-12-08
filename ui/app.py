@@ -33,7 +33,7 @@ def post_query(query: str, *, index_name: str, lang_pref: list[str], k: int,
 
 # --- Sidebar ---
 ui_lang = st.sidebar.selectbox("UI language / Idioma de la UI", ["es","en"], index=0, key="ui_lang")
-
+answer_lang = st.sidebar.selectbox("Answer language / Idioma de la respuesta", ["auto", "es", "en"], index=0, key="answer_lang")
 topic = st.sidebar.selectbox("Topic / Tema", ["", "food", "culture", "gov", "health", "education"], index=1, key="topic")
 lang_pref = st.sidebar.multiselect("Language preference", options=["es","en"], default=["es"], key="lang_pref")
 k = st.sidebar.slider("Top-K", 1, 8, 5, key="topk")
@@ -57,6 +57,7 @@ with col_search:
             k=k,
             use_reranker=use_reranker,
             topic_hint=(topic or None),
+            answer_lang=answer_lang,
         )
         st.session_state["last_response"] = (r.status_code, dt_ms, r.text)
         st.session_state["last_payload"] = payload

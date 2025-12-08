@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import APIRouter, Request
 from typing import Annotated, List, Mapping, Optional
-from pydantic import BaseModel, StringConstraints, Field, model_validator
+from pydantic import BaseModel, StringConstraints, Field, model_validator, field_validator 
+from api.core.lang import detect_lang
 from api.rag.embed import embed_texts
 from api.rag.retrieve import search_similar
 from api.rag.router import load_faq
@@ -39,12 +40,20 @@ class Query(BaseModel):
     topic_hint: Optional[str] = None
     country_hint: Optional[str] = None
     index_name: Optional[str] = IDX
+    answer_lang: Optional[str] = "auto"
     
     @model_validator(mode="after")
     def _validate_hints(self):
         if self.topic_hint and self.topic_hint not in topics:
             raise ValueError(f"topic_hint must be one of {sorted(topics)}")
         return self
+    
+    @field_validator("answer_lang")
+    @classmethod
+    def _validate_answer_lang(cls, v):
+        if v not in ("auto", "en", "es"):
+            raise ValueError("answer_lang must be one of 'auto', 'en', 'es'")
+        return v
       
     
 def normalize_query(q: str) -> str:
@@ -118,6 +127,10 @@ async def ask(payload: Query, request: Request):
     if index_name not in ALLOWED_INDEXES:
         log.warning("invalid_index", got=index_name, use=IDX, request_id=rid)
     lang = payload.lang_pref
+    target_lang = payload.answer_lang
+    if target_lang == "auto":
+        detected = detect_lang(payload.query)
+        target_lang = detected if detected in {"en", "es"} else "es"
     cites: List[dict] = []
     
     # Test mode for CI
@@ -224,7 +237,7 @@ async def ask(payload: Query, request: Request):
                     })
 
             # Extractive answer (never raises)
-            answer = await quote_then_summarize(q, sims)
+            answer = await quote_then_summarize(q, sims, target_lang)
             if not answer or not answer.strip():
                 answer = "Final summary failed to produce an answer."
             
@@ -237,7 +250,11 @@ async def ask(payload: Query, request: Request):
             LATENCY.observe((time.time() - t0) * 1000)
             REQUESTS.labels(route="rag", index=IDX, topic=str(payload.topic_hint), lang=lang).inc()
 
-            return {"route": "rag", "answer": answer, "citations": cites, "request_id": rid}
+            return {
+                "route": "rag", 
+                "answer": answer, 
+                "citations": cites, 
+                "request_id": rid}
         
         except Exception as e:
             log.exception("query_failed id=%s etype=%s", rid, IDX)

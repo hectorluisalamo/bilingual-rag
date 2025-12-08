@@ -14,6 +14,7 @@ _DEF_VERBS = re.compile(
 
 SYS = (
 "You are a precise bilingual assistant. Answer ONLY using the provided context. "
+"Write the final answer in Target_Lang (\"es\" or \"en\"). "
 "Respond in the language of the question. Each sentence must include citation markers "
 "like [1], [2] that map to the numbered sources below. If the context lacks facts, say you "
 "don't have enough information."
@@ -93,7 +94,7 @@ def rule_based_definition(question: str, sims: List[Dict]) -> str:
 
 # --- Main generator ---
 
-async def quote_then_summarize(question: str, cands: List[Dict]) -> str:
+async def quote_then_summarize(question: str, cands: List[Dict], target_lang: str) -> str:
     # Limit context size
     cands = list(cands or [])[:5]
     if not cands:
@@ -104,6 +105,7 @@ async def quote_then_summarize(question: str, cands: List[Dict]) -> str:
     # Extract up to 3 relevant quotes
     def _extract_sync():
         extract_prompt = (
+            
             f"Question: {question}\n\nContext:\n{ctx}\n\n"
             "Select up to 3 short quotes (≤30 words each) that directly answer the question. "
             "Return JSON: {\"quotes\":[{\"i\":<source_number>,\"text\":\"...\"}...]}. "
@@ -136,6 +138,7 @@ async def quote_then_summarize(question: str, cands: List[Dict]) -> str:
     # Summarize quotes with LLM
     def _summarize_sync():
         sum_prompt = (
+            f"Target_lang: {target_lang}\n\n"
             f"Question: {question}\n\n"
             f"Quotes:\n{quotes}\n\n"
             "Write a concise definition-style answer (1-2 sentences). "
