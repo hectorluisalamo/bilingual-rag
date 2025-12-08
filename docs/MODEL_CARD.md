@@ -36,18 +36,19 @@ Bilingual RAG system that retrieves from licensed ES/EN sources (Wikipedia ES, C
 
 ## Reproducibility
 
-- Index: `DEFAULT_INDEX_NAME=c300o45`
-- Chunker: max_tokens=300, overlap=45
+- Index: **c300o45** (chunk 300, overlap 45)
 - Embeddings: `text-embedding-3-small` → DB `vector(1536)`
 - Reranker: `bge-reranker-base`
-- Catalog: `data/docs_catalog.json` (commit <hash>)
-- Eval: `scripts/eval_retrieval.py` on 50-item bilingual set; reranker ON
+- Filters: `lang_pref ∈ {es,en}`, `topic_hint` optional
+- Fallback: if filtered search returns 0, retry without topic and with `["es","en"]`
+- Eval: 50-item bilingual/Spanglish set, reranker ON
 
 ## Known Limitations
 
 - Answers depend on source coverage; if a topic lacks Spanish pages, fallback may pull English sources.
 - Long-tail cultural queries can require richer graph linking; we currently use metadata + reranker only.
 - We don’t ship medical/legal advice; content is informational and citations must be read in context.
+- Only the `c300o45` index is shipped; other variants (c900, etc.) are not enabled in this build.
 
 ## Ethical Considerations
 

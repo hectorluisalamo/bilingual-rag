@@ -8,7 +8,7 @@ Spanish-first users ask culture/civics/health questions and want grounded answer
 - Memory: Redis (TTL 48h) stores language preference and entities.
 - Freshness: prefer `approved=true`, `version=max`; penalize stale in re-rank; always show dates.
 - Default index: **c300o45** (300/45) for stronger R@1 with reranker.
-- Alternate index: **c900** (900/90) for R@5 breadth and faster p50 when packing more chunks.
+  * Why c300o45?: We ablated chunk size/overlap. `c300o45` (300 tokens, 45 overlap) delivered **R@1 0.74** and **R@5 0.80** with stable latency, so we standardized on it for production-lite. Larger chunks (c900) improved R@5 (0.84) but weakened R@1 (0.38), which hurt chat UX. We keep those results in the appendix for future experiments.
 - Retrieval fallback: if filtered retrieval returns 0, retry without topic and with `["es","en"]`.
 
 

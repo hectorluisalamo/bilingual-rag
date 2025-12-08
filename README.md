@@ -58,9 +58,7 @@ curl -s -X POST http://localhost:8000/query/ \
             "k": 1-8,
             "lang_pref": ["es","en"],
             "use_reranker": true,
-            "topic_hint": "food|culture|health|civics|education|null",
-            "country_hint": "US|MX|VE|...|null",
-            "index_name": "c300o45 (default) | c900 | default"
+            "topic_hint": "food|culture|health|civics|education|null"
         }
         ```
     * Response:
@@ -73,6 +71,18 @@ curl -s -X POST http://localhost:8000/query/ \
         }
         ```
     * Errors: JSON {code,message,context} (never HTML)
+
+
+### UI note
+
+The UI runs on a single index (`c300o45`). The index selector is hidden in this build to avoid confusion.
+
+## Index naming
+We use `c<chunk_tokens>o<overlap_tokens>`.
+
+- `c300o45` → chunks of **300 tokens** with **45-token overlap**.
+Why this default? It maximized **first-hit accuracy (R@1 0.74)** while keeping **R@5 0.80** and p95 ≈ 2.0s on our 50-item bilingual/Spanglish set.
+
 
 ## Retrieval policy (production-lite)
 
@@ -99,10 +109,12 @@ make down -v   # stop and wipe volumes
 - `vector <=> numeric[]` → psycopg2 didn’t bind your list as `vector`. Fix: we register pgvector automatically; if it fails, we fall back to `CAST(:qvec AS vector)`. Ensure you’re on the `pgvector/pgvector:pg16` image.
 - `:qvec::vector` syntax error → use `CAST(:qvec AS vector)` (already patched).
 - 404 `/health/dbdiag` → router not mounted. Verify `app.include_router(health.router, prefix="/health")`.
-- Empty citations in UI → index mismatch or overzealous filters. Check counts:
+- Empty citations? Ensure you seeded the **c300o45** index:
+  `make seed`  (uses tokens=300, overlap=45).
+- Check counts:
   ```sql
-  SELECT c.index_name, d.topic, COUNT(*) FROM chunks c JOIN documents d ON d.id=c.doc_id GROUP BY 1,2 ORDER BY 1,2;
-
+  SELECT d.topic, COUNT(*) FROM chunks c JOIN documents d ON d.id=c.doc_id
+  WHERE c.index_name='c300o45' GROUP BY 1 ORDER BY 1;
 
 ## Repo Layout
 
