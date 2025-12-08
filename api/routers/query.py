@@ -6,7 +6,7 @@ from api.rag.embed import embed_texts
 from api.rag.retrieve import search_similar
 from api.rag.router import load_faq
 from api.rag.generate import quote_then_summarize
-from api.routers.metrics import REQUESTS, LATENCY, EMB_LAT, DB_LAT
+from api.routers.metrics import REQUESTS, LATENCY, EMB_LAT, DB_LAT, ERRORS
 import asyncio, unicodedata, re, time, os, logging
 
 FAQ = {}
@@ -259,6 +259,7 @@ async def ask(payload: Query, request: Request):
         return result
     except asyncio.TimeoutError:
         log.warning("query_timeout id=%s budget=%ss", rid, timeout)
+        ERRORS.labels(code="500").inc()
         # Still return schema-shape so UI doesn’t crash
         return {"route":"timeout","answer":"","citations":[],"request_id":rid,"error":{"code":"timeout"}}
     
