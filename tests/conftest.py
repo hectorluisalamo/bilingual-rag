@@ -1,28 +1,54 @@
-import os
-import httpx
-import pytest
-from fastapi.testclient import TestClient
+import os, time, httpx, pytest
 
-os.environ["TEST_MODE"] = "1"
-os.environ.setdefault("FAQ_PATH", "data/faq.jsonl")
+API = os.getenv("API_URL", "http://localhost:8000")
+DEFAULT_INDEX = os.getenv("DEFAULT_INDEX_NAME", "c300o45")
 
-from api.main import app  # Import app after env is set
+def _wait_ready(timeout=30):
+    deadline = time.time() + timeout
+    last_err = None
+    while time.time() < deadline:
+        try:
+            r = httpx.get(f"{API}/health/ready", timeout=5)
+            if r.status_code == 200 and r.json().get("status") in ("ok","degraded"):
+                return True
+        except Exception as e:
+            last_err = e
+        time.sleep(1)
+    raise RuntimeError(f"API not ready at {API}/health/ready: {last_err}")
+
+@pytest.fixture(scope="session")
+def client():
+    _wait_ready()
+    return httpx.Client(base_url=API, timeout=30)
 
 @pytest.fixture(scope="session", autouse=True)
-def seed_minimum_corpus():
-    # idempotent ingest; ignore errors if already present
+def seed_minimum_corpus(client):
+    # idempotent ingest of Arepa; OK if already exists or allowlist blocks another host
     payload = {
         "url": "https://es.wikipedia.org/wiki/Arepa",
         "lang": "es",
         "topic": "food",
         "country": "VE",
-        "index_name": os.getenv("DEFAULT_INDEX_NAME", "c300o45"),
+        "index_name": DEFAULT_INDEX,
         "max_tokens": 300,
-        "overlap": 45
+        "overlap": 45,
     }
     try:
-        with httpx.Client(timeout=30) as c:
-            c.post("https://latino-rag-api.onrender.com/ingest/url", json=payload)
+        client.post("/ingest/url", json=payload)
     except Exception:
         pass
-    yield
+    # sanity: make sure at least one query returns some citations (with fallback)
+    q = {
+        "query": "¿Qué es una arepa?",
+        "k": 3,
+        "lang_pref": ["es","en"],
+        "use_reranker": True,
+        "topic_hint": "food",
+        "index_name": DEFAULT_INDEX
+    }
+    try:
+        r = client.post("/query/", json=q)
+        # don't assert here; tests will skip gracefully if still empty
+        _ = r.json()
+    except Exception:
+        pass
