@@ -33,7 +33,7 @@ def post_query(query: str, *, index_name: str, lang_pref: list[str], k: int,
 # --- Sidebar ---
 ui_lang = st.sidebar.selectbox("UI language / Idioma de la UI", ["es","en"], index=0, key="ui_lang")
 index_name = st.sidebar.text_input(
-    "Index name", value=os.getenv("DEFAULT_INDEX_NAME","c300o45"), key="index_name"
+    "Index name", value=os.getenv("DEFAULT_INDEX_NAME", "c300o45"), key="index_name", disabled=True
 )
 topic = st.sidebar.selectbox("Topic / Tema", ["", "food", "culture", "gov", "health", "education"], index=1, key="topic")
 lang_pref = st.sidebar.multiselect("Language preference", options=["es","en"], default=["es"], key="lang_pref")

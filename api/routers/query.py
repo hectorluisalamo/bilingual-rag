@@ -14,6 +14,8 @@ NORM_WS = re.compile(r"\s+")
 topics = {"food","culture","health","civics","education"}
 timeout = int(os.getenv("QUERY_TIMEOUT_SEC", "8"))
 log = logging.getLogger("api.query")
+IDX = os.getenv("DEFAULT_INDEX_NAME", "c300o45")
+ALLOWED_INDEXES = {"c300o45"}
 
 @asynccontextmanager
 async def lifespan(app: APIRouter):
@@ -36,7 +38,7 @@ class Query(BaseModel):
     use_reranker: bool = False
     topic_hint: Optional[str] = None
     country_hint: Optional[str] = None
-    index_name: Optional[str] = None
+    index_name: Optional[str] = IDX
     
     @model_validator(mode="after")
     def _validate_hints(self):
@@ -112,7 +114,9 @@ def _select_sentences(query: str, texts: List[str], max_sentences: int = 3) -> L
 async def ask(payload: Query, request: Request):
     rid = getattr(request.state, "request_id", "na")
     q = normalize_query(payload.query) or (payload.query or "").strip()
-    index_name = payload.index_name or os.getenv("DEFAULT_INDEX_NAME", "c300o45")
+    index_name = payload.index_name or IDX
+    if index_name not in ALLOWED_INDEXES:
+        log.warning("invalid_index", got=index_name, use=IDX, request_id=rid)
     lang = payload.lang_pref
     cites: List[dict] = []
     
@@ -128,7 +132,7 @@ async def ask(payload: Query, request: Request):
         sims: List = []
         answer: str = ""
         log.info("req start id=%s q=%r k=%s lang=%s rerank=%s index=%s",
-            rid, q, payload.k, lang, payload.use_reranker, index_name)
+            rid, q, payload.k, lang, payload.use_reranker, IDX)
         
         try:
             # Try FAQ routing first
@@ -137,7 +141,7 @@ async def ask(payload: Query, request: Request):
             except Exception:
                 routed = None
             if routed:
-                REQUESTS.labels(route="faq", index=index_name, topic=str(payload.topic_hint), lang=lang).inc()
+                REQUESTS.labels(route="faq", index=IDX, topic=str(payload.topic_hint), lang=lang).inc()
                 return {**routed, "request_id": rid}
             
             t0 = time.time()     
@@ -163,7 +167,7 @@ async def ask(payload: Query, request: Request):
                 lang_filter=tuple(lang or ("es", "en")),
                 topic=payload.topic_hint,
                 country=payload.country_hint,
-                index_name=index_name
+                index_name=IDX
             )
             log.debug("retrieved=%d id=%s", len(sims or []), rid)
             if sims:
@@ -181,7 +185,7 @@ async def ask(payload: Query, request: Request):
                     lang_filter=("es", "en"),
                     topic=None,
                     country=payload.country_hint,
-                    index_name=index_name
+                    index_name=IDX
                 )
             DB_LAT.observe((time.time() - s0) * 1000)
             log.debug("retrieved=%d id=%s", len(sims or []), rid)
@@ -231,12 +235,12 @@ async def ask(payload: Query, request: Request):
         
             # Metrics (after success)
             LATENCY.observe((time.time() - t0) * 1000)
-            REQUESTS.labels(route="rag", index=index_name, topic=str(payload.topic_hint), lang=lang).inc()
+            REQUESTS.labels(route="rag", index=IDX, topic=str(payload.topic_hint), lang=lang).inc()
 
             return {"route": "rag", "answer": answer, "citations": cites, "request_id": rid}
         
         except Exception as e:
-            log.exception("query_failed id=%s etype=%s", rid, index_name)
+            log.exception("query_failed id=%s etype=%s", rid, IDX)
             # Return schema (status 200), not HTTPException/detail
             return {
                 "route": "error",
