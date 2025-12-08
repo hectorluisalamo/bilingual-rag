@@ -191,6 +191,7 @@ async def ask(payload: Query, request: Request):
                     log.debug("sims0: type=%s has_text=%s id=%s", type(first).__name__, hasattr(first, "text"), rid)
 
             # Fallback if empty
+            fallback_note = None
             if not sims:
                 sims = search_similar(
                     qvec,
@@ -200,6 +201,8 @@ async def ask(payload: Query, request: Request):
                     country=payload.country_hint,
                     index_name=IDX
                 )
+                fallback_note = "fallback_no_topic_or_lang"
+                
             DB_LAT.observe((time.time() - s0) * 1000)
             log.debug("retrieved=%d id=%s", len(sims or []), rid)
         
@@ -224,14 +227,14 @@ async def ask(payload: Query, request: Request):
                 if isinstance(s, Mapping):
                     cites.append({
                         "uri": s.get("source_uri") or s.get("uri") or "",
-                        "snippet": _as_text(s)[:500],
+                        "snippet": _as_text(s)[:250],
                         "date": s.get("published_at"),
                         "score": s.get("score"),
                     })
                 else:
                     cites.append({
                         "uri": getattr(s, "source_uri", "") or getattr(s, "uri", ""),
-                        "snippet": _as_text(s)[:500],
+                        "snippet": _as_text(s)[:250],
                         "date": getattr(s, "published_at", None),
                         "score": getattr(s, "score", None),
                     })
