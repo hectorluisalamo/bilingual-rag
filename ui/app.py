@@ -16,7 +16,7 @@ if st.session_state.get("_do_clear"):
     st.rerun()
 
 def post_query(query: str, *, index_name: str, lang_pref: list[str], k: int,
-               use_reranker: bool, topic_hint: str | None):
+               use_reranker: bool, topic_hint: str | None, answer_lang: str):
     payload = {
         "query": (query or "").strip(),
         "k": int(k),
@@ -24,6 +24,7 @@ def post_query(query: str, *, index_name: str, lang_pref: list[str], k: int,
         "use_reranker": bool(use_reranker),
         "topic_hint": topic_hint or None,
         "index_name": index_name or None,
+        "answer_lang": answer_lang or "auto",
     }
     t0 = time.time()
     timeout = httpx.Timeout(15.0, connect=5.0, read=15.0, write=5.0)
