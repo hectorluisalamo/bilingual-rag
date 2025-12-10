@@ -7,16 +7,24 @@ Bilingual (ES/EN) retrieval-augmented QA with grounded citations. Tuned for Lati
 [![CI](https://github.com/hectorluisalamo/bilingual-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/hectorluisalamo/bilingual-rag/actions/workflows/ci.yml)
 
 Live demo: [<your-url>](https://bilingual-rag.onrender.com/)
+
 Code: [<repo-url>](https://github.com/hectorluisalamo/bilingual-rag)
+
 Metrics (50-item gold set, reranker ON):
 - Default index c300o45 → R@1 0.74, R@5 0.80, p95 ≈ 2.03s
 - Alternate c900 → R@5 0.84, p50 ≈ 0.57s
+
 What’s different:
 - Router (FAQ/BM25) → skips RAG for exact matches
 - Layered retrieval (lang/topic filters + cross-encoder re-rank)
 - Memory (Redis; TTL 48h) for language prefs & entities
 - Freshness/version awareness; citation dates shown
 - Eval harness + metrics endpoint
+
+**New (v0.1.1):**
+- Answer language toggle: `answer_lang = auto | es | en` (output language), independent of `lang_pref` (retrieval).
+- Robust metrics: `/metrics` via `prometheus-client`; metrics are guarded so monitoring can’t crash requests.
+- Retrieval fallback: if filters return 0 hits, the service retries once without `topic` and with `lang_pref=["es","en"]`.
 
 Stack: FastAPI, pgvector, Redis, Streamlit, OpenAI embeddings, HF reranker, Docker Compose, Prometheus.
 
@@ -58,7 +66,8 @@ curl -s -X POST http://localhost:8000/query/ \
             "k": 1-8,
             "lang_pref": ["es","en"],
             "use_reranker": true,
-            "topic_hint": "food|culture|health|civics|education|null"
+            "topic_hint": "food|culture|health|civics|education|null",
+            "answer_lang": "auto|es|en"
         }
         ```
     * Response:

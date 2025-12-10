@@ -33,15 +33,17 @@ Bilingual RAG system that retrieves from licensed ES/EN sources (Wikipedia ES, C
 - **Index mismatch (multi-env):** Compose vs local DB can diverge. Mitigation: health route `/health/dbdiag`, counts query in README, and a minimal seed.
 - **Casting/binding drift:** If pgvector adapter fails, we fall back to `CAST(:qvec AS vector)` with safe literal formatting.
 - **Over-filtering:** `topic_hint`/`lang_pref` may prune all hits. Mitigation: documented fallback to wider search; UI informs user when fallback is used.
+- **Monitoring-induced failures:** Metrics misconfiguration previously caused 500s (“Incorrect label names”). Mitigation: positional label calls, sanitized label values, and try/except guards around metrics updates.
+- **Multi-env DB drift:** Compose vs local DBs can diverge. Mitigation: health checks, counts query, and minimal seed.
 
 ## Reproducibility
 
 - Index: **c300o45** (chunk 300, overlap 45)
 - Embeddings: `text-embedding-3-small` → DB `vector(1536)`
-- Reranker: `bge-reranker-base`
+- Reranker: `bge-reranker-base` (cross-encoder)
 - Filters: `lang_pref ∈ {es,en}`, `topic_hint` optional
 - Fallback: if filtered search returns 0, retry without topic and with `["es","en"]`
-- Eval: 50-item bilingual/Spanglish set, reranker ON
+- Metrics: prometheus-client 0.20.0; positional labels (route,index,topic,langs)
 
 ## Known Limitations
 
@@ -49,6 +51,9 @@ Bilingual RAG system that retrieves from licensed ES/EN sources (Wikipedia ES, C
 - Long-tail cultural queries can require richer graph linking; we currently use metadata + reranker only.
 - We don’t ship medical/legal advice; content is informational and citations must be read in context.
 - Only the `c300o45` index is shipped; other variants (c900, etc.) are not enabled in this build.
+- Snippets are displayed in source language; the answer may be translated per `answer_lang`.
+- Domain breadth limited to curated corpus; coverage affects answer quality.
+
 
 ## Ethical Considerations
 

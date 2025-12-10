@@ -9,7 +9,8 @@ Spanish-first users ask culture/civics/health questions and want grounded answer
 - Freshness: prefer `approved=true`, `version=max`; penalize stale in re-rank; always show dates.
 - Default index: **c300o45** (300/45) for stronger R@1 with reranker.
   * Why c300o45?: We ablated chunk size/overlap. `c300o45` (300 tokens, 45 overlap) delivered **R@1 0.74** and **R@5 0.80** with stable latency, so we standardized on it for production-lite. Larger chunks (c900) improved R@5 (0.84) but weakened R@1 (0.38), which hurt chat UX. We keep those results in the appendix for future experiments.
-- Retrieval fallback: if filtered retrieval returns 0, retry without topic and with `["es","en"]`.
+- Language toggle: `answer_lang` controls output (auto/es/en) independent of retrieval `lang_pref`.
+- Fallback retrieval: if filters prune all hits, retry without `topic` and with bilingual `lang_pref`.
 
 
 ## Metrics & Ablations
@@ -26,20 +27,30 @@ Spanish-first users ask culture/civics/health questions and want grounded answer
 - Logs: JSON with `request_id`, `index`, `k`.
 
 ## Incident & Fix
-- **Symptom:** Spanish query returned HTML/FAFSA noise.
+**Incident:** Spanish query returned HTML/FAFSA noise.
 - **Root cause:** No relevant docs ingested + missing metadata filters.
 - **Fix:** Ingest ES Wikipedia Arepa + enable `topic_hint` and reranker → immediate precision gain.
+
+**Incident:** English queries 500’d on Render with `ValueError: Incorrect label names`.
+- **Root cause:** Prometheus `.labels()` keys didn’t match the Counter’s defined labelnames.
+- **Fix:** Standardized label order `(route,index,topic,langs)`, switched to positional `.labels(...)`, sanitized values, and wrapped metrics calls in try/except. Added dependency guard so missing prometheus-client doesn’t block startup.
+- **Outcome:** English/Spanish queries return 200 with citations; `/metrics` increments on traffic.
+
+**Incident:** DB hostname mismatch — local API pointed at `DB_URL=@db` (compose-only).
+- **Fix:** use `@localhost` for local mode.
+
+**Incident:** pgvector operator error — `operator does not exist: vector <=> numeric[]`.
+- **Fix:** register pgvector’s psycopg2 adapter; added fallback `CAST(:qvec AS vector)` with a safe literal builder.
+
+**Incident:** Empty results with topic filter — Spanish queries returned nothing due to strict `topic_hint`.
+- **Fix:** implemented a one-hop fallback (drop topic, widen langs), and documented index/tagging requirements.
+
+**Incident:** Under-ingested variants — `c300o45`/`c900` looked bad until fully reindexed.
+- **Fix:** added `index_name` plumbing end to end and reindex scripts; counts check added to docs.
 
 ## Next 3 Improvements
 1) Add re-ranker ablation (base vs large) and log true cost/lat tradeoff.
 2) Implement CAG mode when corpus < context/2; measure cache hit rate and p95.
 3) Freshness tests that **force** newer version to win; surface doc date in UI prominently.
 
-### Update “Incident & Fix” with specifics
 
-## Incident & Fix
-
-- **DB hostname mismatch:** Local API pointed at `DB_URL=@db` (compose-only). **Fix:** use `@localhost` for local mode.
-- **pgvector operator error:** `operator does not exist: vector <=> numeric[]`. **Fix:** register pgvector’s psycopg2 adapter; added fallback `CAST(:qvec AS vector)` with a safe literal builder.
-- **Empty results with topic filter:** Spanish queries returned nothing due to strict `topic_hint`. **Fix:** implemented a one-hop fallback (drop topic, widen langs), and documented index/tagging requirements.
-- **Under-ingested variants:** `c300o45`/`c900` looked bad until fully reindexed. **Fix:** added `index_name` plumbing end to end and reindex scripts; counts check added to docs.
