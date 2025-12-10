@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from typing import Annotated, List, Mapping, Optional
 from pydantic import BaseModel, StringConstraints, Field, model_validator, field_validator 
 from api.core.lang import detect_lang
@@ -250,8 +250,18 @@ async def ask(payload: Query, request: Request):
                 answer = rule_based_definition(q, sims)
         
             # Metrics (after success)
-            LATENCY.observe((time.time() - t0) * 1000)
-            REQUESTS.labels(route="rag", index=IDX, topic=str(payload.topic_hint), lang=lang).inc()
+            try:
+                if LATENCY:
+                    LATENCY.observe((time.time() - t0) * 1000)
+                if REQUESTS:
+                    REQUESTS.labels(
+                        route="rag", 
+                        index=IDX, 
+                        topic=str(payload.topic_hint), 
+                        lang=lang
+                    ).inc()
+            except Exception:
+                pass
 
             return {
                 "route": "rag", 
@@ -277,11 +287,18 @@ async def ask(payload: Query, request: Request):
     try:
         result = await asyncio.wait_for(_query_task(), timeout=timeout)
         return result
-    except asyncio.TimeoutError:
-        log.warning("query_timeout id=%s budget=%ss", rid, timeout)
-        ERRORS.labels(code="500").inc()
-        # Still return schema-shape so UI doesn’t crash
-        return {"route":"timeout","answer":"","citations":[],"request_id":rid,"error":{"code":"timeout"}}
+    except asyncio.TimeoutError as e:
+        try:
+            if ERRORS: ERRORS.labels("504").inc()
+        except Exception:
+            pass
+        raise HTTPException(status_code=504, detail={"code":"timeout","message":"upstream timeout"})
+    except Exception as e:
+        try:
+            if ERRORS: ERRORS.labels("500").inc()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail={"code":"internal_error","message":type(e).__name__})
     
 @router.post("/echo")
 async def echo(payload: Query):
